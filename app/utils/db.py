@@ -19,7 +19,7 @@ def get_db_connection():
             g.db = pymysql.connect(
                 host=os.environ.get('DB_HOST'),
                 user=os.environ.get('DB_USER'),
-                password=os.environ.get('DB_PASSWORD'),
+                password=os.environ.get('DB_PASS'),
                 database=os.environ.get('DB_NAME'),
                 port=int(os.environ.get('DB_PORT', 3306)),
                 charset='utf8mb4',

@@ -96,7 +96,7 @@ git push -u origin develop
 |------------|------|--------|
 | `DB_HOST` | 資料庫主機位址 | `34.42.148.11` |
 | `DB_USER` | 資料庫使用者名稱 | `root` |
-| `DB_PASSWORD` | 資料庫密碼 | `sql0626` |
+| `DB_PASS` | 資料庫密碼 | `sql0626` |
 | `DB_NAME` | 資料庫名稱 | `pill_test` |
 | `DB_PORT` | 資料庫連接埠 | `3306` |
 

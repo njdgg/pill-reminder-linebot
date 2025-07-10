@@ -61,7 +61,7 @@ jobs:
         GEMINI_API_KEY=test_gemini_key
         DB_HOST=localhost
         DB_USER=test_user
-        DB_PASSWORD=test_password
+        DB_PASS=test_password
         DB_NAME=test_db
         DB_PORT=3306
         SECRET_KEY=test_secret_key

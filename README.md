@@ -97,7 +97,7 @@ GEMINI_API_KEY=your_gemini_api_key
 # MySQL 資料庫設定
 DB_HOST=your_db_host
 DB_USER=your_db_user
-DB_PASSWORD=your_db_password
+DB_PASS=your_db_password
 DB_NAME=your_db_name
 DB_PORT=3306
 

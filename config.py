@@ -47,7 +47,7 @@ class Config:
     # --- MySQL 資料庫設定 ---
     DB_HOST = os.environ.get('DB_HOST')
     DB_USER = os.environ.get('DB_USER')
-    DB_PASSWORD = os.environ.get('DB_PASSWORD')
+    DB_PASSWORD = os.environ.get('DB_PASS')
     DB_NAME = os.environ.get('DB_NAME')
     DB_PORT = int(os.environ.get('DB_PORT', 3306))
 
@@ -60,13 +60,23 @@ class Config:
             'LIFF_ID_CAMERA', 'LIFF_ID_EDIT', 'LIFF_ID_PRESCRIPTION_REMINDER', 'LIFF_ID_MANUAL_REMINDER', 'LIFF_ID_HEALTH_FORM',
             'LINE_LOGIN_CHANNEL_ID', 'LINE_LOGIN_CHANNEL_SECRET',
             'GEMINI_API_KEY',
-            'DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME', 'DB_PORT'
+            'DB_HOST', 'DB_USER', 'DB_PASS', 'DB_NAME', 'DB_PORT'
         ]
         
         # SECRET_KEY 是可選的，如果沒有設定會使用預設值
         optional_vars = ['SECRET_KEY']
         
-        missing_vars = [var for var in required_vars if not getattr(Config, var, None)]
+        # 創建環境變數到 Config 屬性的映射
+        env_to_config_map = {
+            'DB_PASS': 'DB_PASSWORD'  # DB_PASS 環境變數對應 DB_PASSWORD 屬性
+        }
+        
+        missing_vars = []
+        for var in required_vars:
+            # 獲取對應的 Config 屬性名稱
+            config_attr = env_to_config_map.get(var, var)
+            if not getattr(Config, config_attr, None):
+                missing_vars.append(var)
         
         if missing_vars:
             raise ValueError(f".env 檔案缺少必要的設定: {', '.join(missing_vars)}")

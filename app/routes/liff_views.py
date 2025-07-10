@@ -99,8 +99,8 @@ def manual_reminder_page():
 @liff_bp.route('/liff/health_form')
 def health_form_page():
     """渲染健康記錄的頁面"""
-    # 直接使用固定的 LIFF ID，確保不會出現模板變數問題
-    liff_id = "2007610723-GQX9MpVb"
+    # 從環境變數讀取 LIFF ID
+    liff_id = current_app.config['LIFF_ID_HEALTH_FORM']
     
     current_app.logger.info(f"🔧 健康記錄頁面 - 使用 LIFF ID: {liff_id}")
     

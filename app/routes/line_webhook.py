@@ -244,9 +244,8 @@ def handle_health_record_menu(event):
         current_app.logger.info(f"🔍 健康記錄 - 環境變數 LIFF_ID_HEALTH_FORM: {env_liff_id}")
         current_app.logger.info(f"🔍 健康記錄 - Config LIFF_ID_HEALTH_FORM: {config_liff_id}")
         
-        # 暫時強制使用正確的 LIFF ID
-        correct_liff_id = "2007610723-GQX9MpVb"
-        liff_url = f"https://liff.line.me/{correct_liff_id}"
+        # 使用配置中的 LIFF ID
+        liff_url = f"https://liff.line.me/{config_liff_id}"
         
         print(f"🔧 健康記錄 - 強制使用正確的 LIFF URL: {liff_url}")
         current_app.logger.info(f"🔧 健康記錄 - 強制使用正確的 LIFF URL: {liff_url}")
