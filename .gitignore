@@ -201,7 +201,7 @@ test_*.py
 .env.local
 .env.staging
 .env.production
-
+env.yaml
 # Docker
 .dockerignore
 
