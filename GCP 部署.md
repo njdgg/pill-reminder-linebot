@@ -30,42 +30,32 @@ gcloud auth configure-docker us-central1-docker.pkg.dev
 ### 4️⃣ 建立 Docker Image 並推送
 
 ```
-set PROJECT_ID=gcp1-462701
 docker build -t us-central1-docker.pkg.dev/sunlit-hook-461906-r1/njdg/pill_test:latest .
 docker push us-central1-docker.pkg.dev/sunlit-hook-461906-r1/njdg/pill_test:latest
 ```
 
 ---
 
-### 5️⃣ 部署到 Cloud Run（請先準備好你的 LINE_TOKEN）
-
-假設：
-
-- `LINE_CHANNEL_SECRET=你的LINE_CHANNEL_SECRET`
-- `LINE_CHANNEL_ACCESS_TOKEN=你的LINE_CHANNEL_ACCESS_TOKEN`
-
-請把以下指令中的兩個值替換成你自己的：
+### 5️⃣ 部署到 Cloud Run
 
 ```
-gcloud run deploy pilltest --image=us-central1-docker.pkg.dev/sunlit-hook-461906-r1/njdg/pill_test:latest --region=us-central1 --platform=managed --allow-unauthenticated --env-vars-file env.yaml
-
-```
-
-```python
-gcloud run deploy line-bot \
-  --image gcr.io/my-project-id/my-image:latest \
-  --region asia-east1 \
-  --platform managed \
-  --allow-unauthenticated \
-  --env-vars-file env.yaml
-
+gcloud run deploy linebot0711 --image=us-central1-docker.pkg.dev/sunlit-hook-461906-r1/njdg/pill_test:latest --region=us-central1 --platform=managed --allow-unauthenticated --env-vars-file=env.yaml --min-instances=1 --memory=1Gi --timeout=300s
 ```
 
 ---
 
-# 🎯 補充一點：
+### 6️⃣ 設定 Cloud Scheduler
 
-在 Windows CMD 裡：
+```
+gcloud services enable cloudscheduler.googleapis.com
+```
 
-- 環境變數用 `%VAR_NAME%`
-- 參數都用單行執行，不要換行、不用 `\`
+```
+gcloud app create --region=us-central1
+```
+
+```
+gcloud scheduler jobs create http reminder-check-job --location=us-central1 --schedule="* * * * *" --uri="https://linebot0711-712800774423.us-central1.run.app/api/check-reminders" --http-method=POST --headers="Content-Type=application/json,Authorization=Bearer pill-reminder-scheduler-token-2025-secure" --description="每分鐘檢查並發送用藥提醒" --time-zone="Asia/Taipei"
+```
+
+

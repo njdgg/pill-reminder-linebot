@@ -57,10 +57,12 @@ def create_app(config_class_string):
     from .routes.line_webhook import webhook_bp
     from .routes.liff_views import liff_bp
     from .routes.auth import auth_bp
+    from .routes.scheduler_api import scheduler_api
     
     app.register_blueprint(webhook_bp)
     app.register_blueprint(liff_bp)
     app.register_blueprint(auth_bp, url_prefix='/auth')
+    app.register_blueprint(scheduler_api)
 
     # 建立必要的資料夾 (如果不存在)
     # 這裡假設您的 `app.py` 中的 uploads 資料夾是需要的

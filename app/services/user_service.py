@@ -13,7 +13,26 @@ class UserService:
 
     @staticmethod
     def set_user_complex_state(user_id: str, state_data: dict):
-        DB.set_complex_state(user_id, state_data)
+        """設置用戶複雜狀態，自動確保用戶存在"""
+        try:
+            # 【核心修復】確保用戶在資料庫中存在
+            try:
+                user_profile = line_bot_api.get_profile(user_id)
+                user_name = user_profile.display_name if user_profile else f"User_{user_id[:8]}"
+            except Exception:
+                user_name = f"User_{user_id[:8]}"
+            
+            result = DB.get_or_create_user(user_id, user_name)
+            if not result:
+                print(f"❌ 無法創建或獲取用戶: {user_id}")
+                return False
+            
+            # 設置狀態
+            DB.set_complex_state(user_id, state_data)
+            return True
+        except Exception as e:
+            print(f"❌ 設置用戶狀態失敗: {e}")
+            return False
 
     @staticmethod
     def clear_user_complex_state(user_id: str):

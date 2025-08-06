@@ -1,8 +1,8 @@
 # 用藥提醒 LINE Bot 🏥💊
 
-[![CI/CD Pipeline](https://github.com/your-username/your-repo/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/your-username/your-repo/actions/workflows/ci-cd.yml)
-[![Deploy to GCP](https://github.com/your-username/your-repo/actions/workflows/deploy-gcp.yml/badge.svg)](https://github.com/your-username/your-repo/actions/workflows/deploy-gcp.yml)
-[![Security Scan](https://github.com/your-username/your-repo/actions/workflows/security-scan.yml/badge.svg)](https://github.com/your-username/your-repo/actions/workflows/security-scan.yml)
+[![CI/CD Pipeline](https://github.com/njdgg/pill-reminder-linebot/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/njdgg/pill-reminder-linebot/actions/workflows/ci-cd.yml)
+[![Deploy to GCP](https://github.com/njdgg/pill-reminder-linebot/actions/workflows/deploy-gcp.yml/badge.svg)](https://github.com/njdgg/pill-reminder-linebot/actions/workflows/deploy-gcp.yml)
+[![Security Scan](https://github.com/njdgg/pill-reminder-linebot/actions/workflows/security-scan.yml/badge.svg)](https://github.com/njdgg/pill-reminder-linebot/actions/workflows/security-scan.yml)
 
 一個智能的 LINE Bot 應用程式，幫助用戶管理藥物提醒、辨識藥品、記錄健康狀況，並支援家人綁定功能。
 
@@ -37,7 +37,7 @@
 
 1. **克隆專案**
    ```bash
-   git clone https://github.com/your-username/your-repo.git
+   git clone https://github.com/njdgg/pill-reminder-linebot.git
    cd your-repo
    ```
 
@@ -195,7 +195,7 @@ flake8 app/
 
 如果您遇到問題或有建議，請：
 
-1. 查看 [Issues](https://github.com/your-username/your-repo/issues)
+1. 查看 [Issues](https://github.com/njdgg/pill-reminder-linebot/issues)
 2. 創建新的 Issue
 3. 聯繫維護者
 

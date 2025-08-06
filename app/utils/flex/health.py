@@ -7,133 +7,125 @@ from linebot.models import (
 
 def generate_health_log_menu(liff_url: str):
     """
-    生成美化的「健康紀錄」選單，專注於主要功能。
-    採用0705項目的現代化設計風格。
+    生成美化的「健康紀錄」選單，採用現代化卡片設計風格。
     """
     bubble = BubbleContainer(
-        size='kilo',
         header=BoxComponent(
             layout='vertical',
             contents=[
-                BoxComponent(
-                    layout='horizontal',
-                    contents=[
-                        TextComponent(
-                            text='💊',
-                            size='xl',
-                            flex=0,
-                            margin='none'
-                        ),
-                        TextComponent(
-                            text='健康紀錄',
-                            weight='bold',
-                            size='xl',
-                            color='#FFFFFF',
-                            margin='sm',
-                            flex=1
-                        )
-                    ],
-                    align_items='center'
-                )
+                TextComponent(text='🏥 健康紀錄管理', weight='bold', size='lg', color='#1F2D3D', align='center')
             ],
-            padding_all='20px',
-            background_color='#4A90E2',
-            corner_radius='12px'
+            background_color='#B9DCEC',
+            padding_all='16px'
         ),
         body=BoxComponent(
-            layout='vertical',
+            layout='vertical', 
+            padding_all='20px', 
+            spacing='xl',
             contents=[
+                # 功能區域
+                BoxComponent(
+                    layout='vertical', 
+                    margin='lg', 
+                    spacing='lg',
+                    contents=[
+                        # 記錄健康數據
+                        BoxComponent(
+                            layout='vertical',
+                            contents=[
+                                TextComponent(
+                                    text='📊 記錄健康數據',
+                                    color='#333333',
+                                    weight='bold',
+                                    size='md'
+                                ),
+                                TextComponent(
+                                    text='血壓、血糖、體重、體溫等健康指標',
+                                    color='#666666',
+                                    size='sm',
+                                    margin='xs'
+                                )
+                            ]
+                        ),
+                        
+                        SeparatorComponent(
+                            margin='lg',
+                            color='#E8E8E8'
+                        ),
+                        
+                        # 查看歷史趨勢
+                        BoxComponent(
+                            layout='vertical',
+                            contents=[
+                                TextComponent(
+                                    text='📈 查看歷史趨勢',
+                                    color='#333333',
+                                    weight='bold',
+                                    size='md'
+                                ),
+                                TextComponent(
+                                    text='圖表分析，掌握健康變化',
+                                    color='#666666',
+                                    size='sm',
+                                    margin='xs'
+                                )
+                            ]
+                        ),
+                        
+                        SeparatorComponent(
+                            margin='lg',
+                            color='#E8E8E8'
+                        ),
+                        
+                        # 家人健康管理
+                        BoxComponent(
+                            layout='vertical',
+                            contents=[
+                                TextComponent(
+                                    text='👨‍👩‍👧‍👦 家人健康管理',
+                                    color='#333333',
+                                    weight='bold',
+                                    size='md'
+                                ),
+                                TextComponent(
+                                    text='為家人記錄，關愛更貼心',
+                                    color='#666666',
+                                    size='sm',
+                                    margin='xs'
+                                )
+                            ]
+                        )
+                    ]
+                ),
+                
+                # 主要行動按鈕
                 BoxComponent(
                     layout='vertical',
-                    contents=[
-                        TextComponent(
-                            text='📊 記錄健康數據',
-                            size='md',
-                            color='#333333',
-                            weight='bold',
-                            margin='none'
-                        ),
-                        TextComponent(
-                            text='血壓、血糖、體重等健康指標',
-                            size='sm',
-                            color='#666666',
-                            margin='xs'
-                        )
-                    ],
-                    margin='lg'
-                ),
-                SeparatorComponent(
                     margin='lg',
-                    color='#E8E8E8'
-                ),
-                BoxComponent(
-                    layout='vertical',
                     contents=[
-                        TextComponent(
-                            text='📈 查看歷史趨勢',
-                            size='md',
-                            color='#333333',
-                            weight='bold',
-                            margin='none'
-                        ),
-                        TextComponent(
-                            text='圖表分析，掌握健康變化',
-                            size='sm',
-                            color='#666666',
-                            margin='xs'
+                        BoxComponent(
+                            layout='vertical',
+                            padding_all='16px',
+                            background_color='#CBEEF3',
+                            corner_radius='12px',
+                            action=URIAction(
+                                label='🏥 開始使用健康紀錄',
+                                uri=liff_url
+                            ),
+                            contents=[
+                                TextComponent(
+                                    text='🏥 開始使用健康紀錄',
+                                    color='#20538F',
+                                    align='center',
+                                    weight='bold',
+                                    size='lg'
+                                )
+                            ]
                         )
-                    ],
-                    margin='lg'
-                ),
-                SeparatorComponent(
-                    margin='lg',
-                    color='#E8E8E8'
-                ),
-                BoxComponent(
-                    layout='vertical',
-                    contents=[
-                        TextComponent(
-                            text='👨‍👩‍👧‍👦 家人健康管理',
-                            size='md',
-                            color='#333333',
-                            weight='bold',
-                            margin='none'
-                        ),
-                        TextComponent(
-                            text='為家人記錄，關愛更貼心',
-                            size='sm',
-                            color='#666666',
-                            margin='xs'
-                        )
-                    ],
-                    margin='lg'
+                    ]
                 )
-            ],
-            padding_all='20px',
-            spacing='none'
-        ),
-        footer=BoxComponent(
-            layout='vertical',
-            spacing='md',
-            contents=[
-                ButtonComponent(
-                    style='primary',
-                    height='md',
-                    action=URIAction(
-                        label='🏥 開始使用健康紀錄',
-                        uri=liff_url
-                    ),
-                    color='#4A90E2',
-                    margin='none'
-                )
-            ],
-            padding_all='20px'
-        ),
-        styles={
-            'header': {'separator': False},
-            'body': {'separator': False},
-            'footer': {'separator': False}
-        }
+            ]
+        )
     )
     
     return FlexSendMessage(alt_text="健康記錄管理", contents=bubble)

@@ -99,14 +99,37 @@ def check_and_send_reminders(app):
     with app.app_context():
         try:
             from app import line_bot_api as bot_api
-            current_time_str = datetime.now().strftime("%H:%M")
+            import pytz
+            
+            # 使用台北時區時間
+            taipei_tz = pytz.timezone('Asia/Taipei')
+            current_time_taipei = datetime.now(taipei_tz)
+            current_time_str = current_time_taipei.strftime("%H:%M")
+            
+            # 添加更詳細的日誌
+            print(f"[{current_time_str}] 開始檢查提醒（台北時間）...")
+            print(f"UTC時間: {datetime.utcnow().strftime('%H:%M')}")
+            
+            # 檢查 bot_api 是否正確初始化
+            if bot_api is None:
+                print(f"[{current_time_str}] 錯誤：line_bot_api 未正確初始化")
+                return
+            
             reminders = DB.get_reminders_for_scheduler(current_time_str)
+            print(f"[{current_time_str}] 找到 {len(reminders)} 筆到期提醒")
+            
             if reminders:
                 app.logger.info(f"[{current_time_str}] 找到 {len(reminders)} 筆到期提醒，準備發送...")
-            for r in reminders:
-                send_reminder_logic(r, current_time_str, bot_api)
+                for i, r in enumerate(reminders, 1):
+                    print(f"[{current_time_str}] 處理第 {i} 筆提醒...")
+                    send_reminder_logic(r, current_time_str, bot_api)
+            else:
+                print(f"[{current_time_str}] 沒有到期的提醒")
+                
         except Exception as e:
-            app.logger.error(f"排程器執行時發生錯誤： {str(e)}")
+            error_msg = f"排程器執行時發生錯誤： {str(e)}"
+            print(error_msg)
+            app.logger.error(error_msg)
             traceback.print_exc()
 
 def send_reminder_logic(reminder_data: dict, current_time_str: str, bot_api=None):
@@ -156,6 +179,12 @@ def send_reminder_logic(reminder_data: dict, current_time_str: str, bot_api=None
             # 詳細錯誤資訊
             if hasattr(e, 'status_code'):
                 print(f"      狀態碼: {e.status_code}")
+                if e.status_code == 400:
+                    print(f"      ⚠️  可能原因: 用戶已封鎖機器人或刪除好友關係")
+                elif e.status_code == 401:
+                    print(f"      ⚠️  可能原因: LINE Channel Access Token 無效")
+                elif e.status_code == 403:
+                    print(f"      ⚠️  可能原因: 沒有權限發送訊息給此用戶")
             if hasattr(e, 'error_response'):
                 print(f"      錯誤回應: {e.error_response}")
             # 檢查 user_id 格式
@@ -165,7 +194,15 @@ def send_reminder_logic(reminder_data: dict, current_time_str: str, bot_api=None
 def run_scheduler(app):
     """啟動背景排程的函式"""
     print("背景排程器已啟動，每分鐘檢查一次。")
+    print(f"當前時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    
+    # 添加更詳細的日誌
     schedule.every().minute.at(":00").do(check_and_send_reminders, app=app)
+    
+    # 立即執行一次檢查（用於測試）
+    print("執行初始提醒檢查...")
+    check_and_send_reminders(app)
+    
     while True:
         schedule.run_pending()
         time.sleep(1)

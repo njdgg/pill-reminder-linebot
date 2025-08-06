@@ -2,6 +2,7 @@ import os
 import uuid
 import base64
 import requests
+import re
 from google.cloud import storage
 from time import time
 
@@ -16,6 +17,39 @@ if GOOGLE_APPLICATION_CREDENTIALS:
 # 這是 kevin_api.py 中定義的 API 端點
 KEVIN_API_URL = "https://detect-api-self.wenalyzer.xyz/detect"
 
+def _is_valid_bucket_name(bucket_name):
+    """
+    驗證 GCS bucket 名稱是否符合 Google Cloud Storage 命名規則
+    """
+    if not bucket_name:
+        return False
+    
+    # 檢查長度 (3-63 字符)
+    if len(bucket_name) < 3 or len(bucket_name) > 63:
+        return False
+    
+    # 檢查開頭和結尾必須是數字或字母
+    if not (bucket_name[0].isalnum() and bucket_name[-1].isalnum()):
+        return False
+    
+    # 檢查只能包含小寫字母、數字、連字符和點
+    if not re.match(r'^[a-z0-9\-\.]+$', bucket_name):
+        return False
+    
+    # 檢查不能包含連續的點
+    if '..' in bucket_name:
+        return False
+    
+    # 檢查不能以 "goog" 開頭
+    if bucket_name.startswith('goog'):
+        return False
+    
+    # 檢查不能包含 "google"
+    if 'google' in bucket_name.lower():
+        return False
+    
+    return True
+
 def _upload_to_gcs(image_bytes, suffix='annotated.jpg'):
     """
     將圖片(bytes)上傳到 Google Cloud Storage 並回傳公開網址。
@@ -24,6 +58,11 @@ def _upload_to_gcs(image_bytes, suffix='annotated.jpg'):
     """
     if not GCS_BUCKET_NAME:
         print("    - [Kevin模型] GCS_BUCKET_NAME 環境變數未設定，跳過圖片上傳")
+        return None
+    
+    # 驗證 bucket 名稱格式
+    if not _is_valid_bucket_name(GCS_BUCKET_NAME):
+        print(f"    - [Kevin模型] GCS_BUCKET_NAME 格式無效: '{GCS_BUCKET_NAME}'，跳過圖片上傳")
         return None
     
     try:
@@ -102,7 +141,7 @@ def detect_pills(pil_image):
         return {
             'detections': detections,
             'elapsed_time': elapsed_time,
-            'model_name': 'kevin模型',
+            'model_name': 'Transformer',
             'annotated_image_url': annotated_image_url,
             'detection_mode': 'single', # 標記為單一模型結果
             'success': True,

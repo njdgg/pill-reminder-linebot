@@ -34,12 +34,12 @@ user_states = {}
 # 可用模型配置
 AVAILABLE_MODELS = {
     "1": {
-        "name": "alex0622",
-        "url": "https://alex0622-712800774423.us-central1.run.app"
+        "name": "yolov12",
+        "url": "https://fastapi-712800774423.us-central1.run.app"
     },
     "2": {
-        "name": "fastapi", 
-        "url": "https://fastapi-712800774423.us-central1.run.app"
+        "name": "yolov11", 
+        "url": "https://fastapiv11-712800774423.us-central1.run.app/"
     }
 }
 
@@ -290,7 +290,17 @@ def handle(event):
             # 设置单模型模式状态
             UserService.save_user_simple_state(user_id, f'pill_detection_single_{model_id}', minutes=10)
             guide_message = flex_pill.generate_camera_guide_menu()
-            reply_text = f"✅ 已選擇模型 {model_id}\n\n現在請拍攝藥丸照片："
+            
+            # 自定義模型顯示名稱
+            model_display_names = {
+                '1': '🧠 高精度模型',
+                '2': '⚡ 高效率模型', 
+                '3': '🎯 Kevin模型'
+            }
+            
+            model_name = model_display_names.get(model_id, f'模型 {model_id}')
+            reply_text = f"✅ 已選擇 {model_name}\n\n現在請拍攝藥丸照片："
+            
             line_bot_api.reply_message(event.reply_token, [
                 TextSendMessage(text=reply_text),
                 guide_message
@@ -425,6 +435,7 @@ def handle_image_message(event):
         
         all_results_for_carousel = []
         total_elapsed_time = 0
+        models_status = None  # 初始化模型狀態變數
 
         if detection_mode == 'single':
             # --- 單一模型辨識邏輯 ---
@@ -458,6 +469,16 @@ def handle_image_message(event):
             step3_end = time.time()
             step3_duration = step3_end - step3_start
             print(f"    - 步驟 3: 單一模型檢測完成。耗時: {step3_duration:.2f} 秒")
+            
+            # 為單一模型也設置狀態資訊
+            model_name = raw_result.get('model_name', f'模型{selected_model}')
+            models_status = {
+                'total': 1,
+                'successful': 1,
+                'failed': 0,
+                'successful_models': [model_name],
+                'failed_models': []
+            }
 
         else: # detection_mode == 'multi'
             # --- ✨ 多模型並行辨識邏輯 (包含 kevin 模型) ---
@@ -486,7 +507,7 @@ def handle_image_message(event):
                 # 任務3: kevin模型 (如果可用)
                 if KEVIN_MODEL_AVAILABLE:
                     future3 = executor.submit(kevin_model_handler.detect_pills, img_pil)
-                    future_to_model[future3] = "kevin模型"
+                    future_to_model[future3] = "Transformer"
                     total_models += 1
 
                 # 等待所有任務完成並收集結果
@@ -521,6 +542,11 @@ def handle_image_message(event):
                 'successful_models': successful_models,
                 'failed_models': failed_models
             }
+            
+            print(f"    - 模型執行狀態總結:")
+            print(f"      - 總模型數: {models_status['total']}")
+            print(f"      - 成功模型: {models_status['successful']} ({', '.join(models_status['successful_models'])})")
+            print(f"      - 失敗模型: {models_status['failed']} ({', '.join(models_status['failed_models'])})")
 
         # 步驟 4 & 5: 準備並回覆訊息
         step4_start = time.time()
@@ -554,8 +580,8 @@ def handle_image_message(event):
                     "layout": "vertical",
                     "spacing": "sm",
                     "contents": [
-                        {"type": "button", "style": "primary", "action": {"type": "postback", "label": "🎯 單一模型辨識", "data": "action=select_model_mode&mode=single"}},
-                        {"type": "button", "style": "primary", "action": {"type": "postback", "label": "🚀 多模型同時辨識", "data": "action=select_model_mode&mode=multi"}}
+                        {"type": "button", "style": "primary", "color": "#FF6B6B", "action": {"type": "postback", "label": "🎯 單一模型辨識", "data": "action=select_model_mode&mode=single"}},
+                        {"type": "button", "style": "primary", "color": "#4ECDC4", "action": {"type": "postback", "label": "🚀 多模型同時辨識", "data": "action=select_model_mode&mode=multi"}}
                     ]
                 }
             }
@@ -566,18 +592,26 @@ def handle_image_message(event):
             
             if detection_mode == 'single':
                 summary_text = f"🎯 單一模型檢測完成！\n"
-                summary_text += f"🤖 使用模型：{all_results_for_carousel[0]['model_name']}\n"
+                if models_status and models_status['successful_models']:
+                    summary_text += f"🤖 使用模型：{models_status['successful_models'][0]}\n"
+                else:
+                    summary_text += f"🤖 使用模型：{all_results_for_carousel[0]['model_name']}\n"
             else:
                 summary_text = f"🚀 多模型並行檢測完成！\n"
-                summary_text += f"📊 {models_status['successful']}/{models_status['total']} 個模型成功回傳結果\n"
-                
-                # 如果有模型失敗，添加說明
-                if models_status['failed'] > 0:
-                    summary_text += f"⚠️ {models_status['failed']} 個模型無法辨識：{', '.join(models_status['failed_models'])}\n"
+                if models_status:
+                    summary_text += f"📊 {models_status['successful']}/{models_status['total']} 個模型成功回傳結果\n"
+                    
+                    # 顯示成功的模型
                     if models_status['successful'] > 0:
                         summary_text += f"✅ 成功模型：{', '.join(models_status['successful_models'])}\n"
+                    
+                    # 如果有模型失敗，添加詳細說明
+                    if models_status['failed'] > 0:
+                        summary_text += f"⚠️ 失敗模型：{', '.join(models_status['failed_models'])}\n"
+                        summary_text += f"   ({models_status['failed']} 個模型無法辨識或發生錯誤)\n"
+                else:
+                    summary_text += f"📊 使用了 {models_count} 個模型\n"
 
-            summary_text += f"💊 總共找到 {total_detections} 個藥丸\n"
             # 計算到目前為止的總處理時間
             current_time = time.time()
             current_total_duration = current_time - total_start_time
@@ -632,7 +666,6 @@ def handle_image_message(event):
                         "layout": "vertical",
                         "contents": [
                             {"type": "text", "text": "🔍 辨識完成", "weight": "bold", "size": "lg"},
-                            {"type": "text", "text": f"總共找到 {total_detections} 個藥丸", "wrap": True, "margin": "md"},
                             {"type": "text", "text": f"使用了 {models_count} 個模型", "wrap": True, "size": "sm", "color": "#666666"}
                         ]
                     }

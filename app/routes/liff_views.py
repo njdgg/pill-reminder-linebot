@@ -29,9 +29,9 @@ def _verify_line_id_token(id_token: str) -> str | None:
         current_app.logger.info(f"🔍 環境變數 LIFF_CHANNEL_ID: {env_value}")
         current_app.logger.info(f"🔍 Config 中的 LIFF_CHANNEL_ID: {config_value}")
         
-        # 暫時強制使用正確的 Channel ID
-        client_id = "2007610723"
-        current_app.logger.info(f"🔧 強制使用正確的 client_id: {client_id}")
+        # 從配置中獲取 Channel ID
+        client_id = config_value or env_value
+        current_app.logger.info(f"🔧 使用配置的 client_id: {client_id}")
         
         response = requests.post(
             'https://api.line.me/oauth2/v2.1/verify',
@@ -84,16 +84,16 @@ def manual_reminder_page():
     reminder_id = request.args.get('reminder_id')
     member_id = request.args.get('member_id')
     
-    # 暫時強制使用正確的 LIFF ID
-    correct_liff_id = "2007610723-wEel8DW2"
-    print(f"🔧 手動提醒頁面 - 強制使用: {correct_liff_id}")
+    # 從配置中獲取 LIFF ID
+    liff_id = current_app.config['LIFF_ID_MANUAL_REMINDER']
+    current_app.logger.info(f"🔧 手動提醒頁面 - 使用 LIFF ID: {liff_id}")
     
     return render_template(
         'manual_reminder_form.html', 
         mode=mode, 
         reminder_id=reminder_id, 
         member_id=member_id,
-        liff_id=correct_liff_id
+        liff_id=liff_id
     )
 
 @liff_bp.route('/liff/health_form')
@@ -125,6 +125,35 @@ def get_draft_api():
 
     if 'results' in task_info:
         data_for_frontend = task_info['results'].copy()
+        
+        # 清理藥物名稱中的引號字元，避免前端 JSON 解析錯誤
+        if 'medications' in data_for_frontend:
+            for med in data_for_frontend['medications']:
+                if med.get('drug_name_zh'):
+                    original = med['drug_name_zh']
+                    cleaned = (original
+                             .replace('"', '')  # 半形雙引號
+                             .replace('"', '')  # 全形左雙引號
+                             .replace('"', '')  # 全形右雙引號
+                             .replace("'", '')  # 半形單引號
+                             .replace(''', '')  # 全形左單引號
+                             .replace(''', '')  # 全形右單引號
+                             .replace('\\', '') # 反斜線
+                             .strip())          # 去除首尾空白
+                    med['drug_name_zh'] = cleaned
+                    if original != cleaned:
+                        current_app.logger.info(f"[CLEAN] 草稿藥名清理: '{original}' -> '{cleaned}'")
+                        
+                if med.get('drug_name_en'):
+                    original = med['drug_name_en']
+                    cleaned = (original
+                             .replace('"', '').replace('"', '').replace('"', '')
+                             .replace("'", '').replace(''', '').replace(''', '')
+                             .replace('\\', '').strip())
+                    med['drug_name_en'] = cleaned
+                    if original != cleaned:
+                        current_app.logger.info(f"[CLEAN] 草稿英文名清理: '{original}' -> '{cleaned}'")
+        
         # 確保包含 member 資訊
         data_for_frontend['member'] = task_info.get('member')
         
@@ -279,7 +308,7 @@ def create_manual_reminder_api():
     # 這裡的 reminder_service 函式可能需要根據您的 DB 層進行調整
     new_id = reminder_service.ReminderService.create_or_update_reminder(user_id, member_id, data.get('formData', {}))
     if new_id:
-        # 新增/編輯成功後，發送該成員的提醒列表 Flex Message
+        # 新增成功後，發送該成員的提醒列表 Flex Message
         try:
             from app.utils.db import DB
             from app.utils.flex import reminder as flex_reminder
@@ -297,9 +326,9 @@ def create_manual_reminder_api():
                 
                 # 發送 Push Message
                 line_bot_api.push_message(user_id, flex_message)
-                current_app.logger.info(f"已向用戶 {user_id} 發送 {member_info['member']} 的提醒列表")
+                current_app.logger.info(f"已向用戶 {user_id} 發送 {member_info['member']} 的新增提醒列表")
         except Exception as e:
-            current_app.logger.error(f"發送提醒列表 Flex Message 失敗: {e}")
+            current_app.logger.error(f"發送新增提醒列表 Flex Message 失敗: {e}")
             # 不影響主要功能，繼續返回成功
         
         return jsonify({'success': True, 'reminder_id': new_id})
@@ -348,19 +377,28 @@ def manual_reminder_api(reminder_id):
                 # 獲取更新後的提醒資訊
                 reminder_info = reminder_service.ReminderService.get_reminder_details(reminder_id, user_id)
                 if reminder_info:
-                    # 獲取成員資訊
-                    member_info = DB.get_member_by_id(reminder_info['member_id'])
-                    if member_info:
-                        # 獲取該成員的所有提醒
-                        reminders = reminder_service.ReminderService.get_reminders_for_member(user_id, member_info['member'])
+                    # 從 reminder_info 中獲取成員名稱
+                    member_name = reminder_info.get('member')
+                    if member_name:
+                        # 通過成員名稱獲取成員資訊
+                        members = DB.get_members(user_id)
+                        member_info = next((m for m in members if m['member'] == member_name), None)
                         
-                        # 生成提醒列表 Flex Message
-                        liff_id = current_app.config['LIFF_ID_MANUAL_REMINDER']
-                        flex_message = flex_reminder.create_reminder_list_carousel(member_info, reminders, liff_id)
-                        
-                        # 發送 Push Message
-                        line_bot_api.push_message(user_id, flex_message)
-                        current_app.logger.info(f"已向用戶 {user_id} 發送 {member_info['member']} 的更新提醒列表")
+                        if member_info:
+                            # 獲取該成員的所有提醒
+                            reminders = reminder_service.ReminderService.get_reminders_for_member(user_id, member_name)
+                            
+                            # 生成提醒列表 Flex Message
+                            liff_id = current_app.config['LIFF_ID_MANUAL_REMINDER']
+                            flex_message = flex_reminder.create_reminder_list_carousel(member_info, reminders, liff_id)
+                            
+                            # 發送 Push Message
+                            line_bot_api.push_message(user_id, flex_message)
+                            current_app.logger.info(f"已向用戶 {user_id} 發送 {member_name} 的更新提醒列表")
+                        else:
+                            current_app.logger.warning(f"找不到成員資訊: {member_name}")
+                    else:
+                        current_app.logger.warning(f"提醒資訊中找不到 member: {list(reminder_info.keys())}")
             except Exception as e:
                 current_app.logger.error(f"發送更新提醒列表 Flex Message 失敗: {e}")
                 # 不影響主要功能，繼續返回成功
@@ -372,7 +410,7 @@ def manual_reminder_api(reminder_id):
 
 @liff_bp.route('/api/health_logs/<string:recorder_id>', methods=['GET'])
 def get_health_logs_api(recorder_id):
-    """獲取指定用戶的所有健康記錄"""
+    """獲取指定用戶相關的所有健康記錄（包含家人建立的）"""
     try:
         logs = DB.get_all_logs_by_recorder(recorder_id)
         # 手動序列化以確保使用 CustomJSONEncoder
@@ -384,6 +422,16 @@ def get_health_logs_api(recorder_id):
     except Exception as e:
         current_app.logger.error(f"獲取健康記錄失敗: {e}")
         return jsonify({"error": "獲取健康記錄失敗"}), 500
+
+@liff_bp.route('/api/health_logs/<string:recorder_id>/member/<string:member_id>', methods=['GET'])
+def get_member_health_logs_api(recorder_id, member_id):
+    """獲取特定成員的健康記錄（包含邀請者建立的 + 該成員自建的）"""
+    try:
+        logs = DB.get_logs_for_specific_member(recorder_id, member_id)
+        return jsonify(logs)
+    except Exception as e:
+        current_app.logger.error(f"獲取成員健康記錄失敗: {e}")
+        return jsonify({"error": "獲取成員健康記錄失敗"}), 500
 
 @liff_bp.route('/api/health_log', methods=['POST'])
 def create_health_log_api():

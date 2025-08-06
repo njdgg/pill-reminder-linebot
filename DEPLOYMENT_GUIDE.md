@@ -24,7 +24,7 @@
 git init
 
 # 添加遠端倉庫
-git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git
+git remote add origin https://github.com/njdgg/pill-reminder-linebot.git
 
 # 推送程式碼
 git add .
@@ -548,6 +548,6 @@ curl -v https://your-database-host:3306
 1. 📖 查看 [GitHub Actions 文檔](https://docs.github.com/en/actions)
 2. 🔍 搜尋 [GitHub Community](https://github.community/)
 3. 📧 聯繫專案維護者
-4. 🐛 提交 [Issue](https://github.com/your-username/your-repo/issues)
+4. 🐛 提交 [Issue](https://github.com/njdgg/pill-reminder-linebot/issues)
 
 **祝您部署順利！** 🚀

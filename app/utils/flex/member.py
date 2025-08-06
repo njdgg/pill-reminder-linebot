@@ -3,10 +3,10 @@
 from linebot.models import (
     FlexSendMessage, BubbleContainer, CarouselContainer, BoxComponent,
     TextComponent, ButtonComponent, SeparatorComponent,
-    PostbackAction
+    PostbackAction, MessageAction
 )
 
-def create_deletable_members_flex(deletable_members: list):
+def create_deletable_members_flex(deletable_members: list, user_id: str = None):
     """
     【新增 & 樣式復刻】建立可刪除提醒對象的專業 Flex Message
     """
@@ -35,22 +35,58 @@ def create_deletable_members_flex(deletable_members: list):
 
     bubbles = []
     for member in deletable_members:
+        # 獲取該成員的提醒筆數
+        reminder_count = 0
+        if user_id:
+            from app.services import reminder_service
+            reminders = reminder_service.ReminderService.get_reminders_for_member(user_id, member['member'])
+            reminder_count = len(reminders) if reminders else 0
+        
+        # 根據提醒筆數顯示不同文字
+        if reminder_count == 0:
+            reminder_text = "無用藥提醒"
+            reminder_color = "#8D94A2"
+        else:
+            reminder_text = f"共{reminder_count}筆提醒"
+            reminder_color = "#059669"
+        
         bubble = BubbleContainer(
             body=BoxComponent(layout='vertical', padding_all='20px', spacing='md', contents=[
                 BoxComponent(
                     layout='vertical', background_color='#FEF2F2', corner_radius='12px',
                     padding_all='16px',
                     contents=[
-                        TextComponent(text='👤', size='xl', align='center'),
+                        # TextComponent(text='👤', size='xl', align='center'),
                         TextComponent(text=member['member'], weight='bold', size='xl', align='center', color='#B91C1C', margin='sm'),
                         TextComponent(text='(自建對象)', size='xs', align='center', color='#B91C1C', margin='xs')
                     ]
                 ),
+                SeparatorComponent(margin='md'),
+                BoxComponent(
+                    layout='vertical',
+                    contents=[
+                        TextComponent(text=f'📝目前提醒用藥：{reminder_text}', size='sm', align='start', color='#333333', weight='bold')
+                    ]
+                ),
                 SeparatorComponent(margin='lg'),
-                TextComponent(text='⚠️ 刪除後將同時移除所有相關提醒，此操作無法復原！', size='sm', color='#B91C1C', align='center', wrap=True),
-                ButtonComponent(
+                TextComponent(text='⚠️ 刪除警告', size='sm', color='#B91C1C', align='start', wrap=True),
+                TextComponent(text='刪除後將同時移除所有相關提醒，此操作無法復原！', size='sm', color='#B91C1C', align='start', wrap=True),
+                BoxComponent(
+                    layout='vertical',
+                    padding_all='lg',
+                    background_color='#FCD5CE',
+                    corner_radius='md',
                     action=PostbackAction(label='🗑️ 確認刪除', data=f"action=delete_member_profile_confirm&member_id={member['id']}"),
-                    style='primary', color='#EF4444', margin='lg'
+                    margin='lg',
+                    contents=[
+                        TextComponent(
+                            text='🗑️ 確認刪除',
+                            color='#BA181B',
+                            align='center',
+                            weight='bold',
+                            size='md'
+                        )
+                    ]
                 )
             ])
         )

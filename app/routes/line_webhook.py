@@ -80,6 +80,7 @@ def handle_message_dispatcher(event):
         "menu": lambda: line_bot_api.reply_message(event.reply_token, flex_general.create_main_menu()),
         
         # 圖文選單按鈕 - 新的簡化名稱
+        "藥單辨識": lambda: prescription_handler.handle(event),
         "藥品辨識": lambda: handle_pill_recognition(event),
         "用藥提醒": lambda: reminder_handler.handle(event),
         "健康紀錄": lambda: line_bot_api.reply_message(
@@ -98,17 +99,26 @@ def handle_message_dispatcher(event):
         # 其他功能
         "登入": lambda: handle_login_request(event),
         "會員登入": lambda: handle_login_request(event),
+        "我的藥歷": lambda: handle_query_prescription(event),
         "查詢個人藥歷": lambda: handle_query_prescription(event),
         "新增/查詢提醒": lambda: reminder_handler.handle(event),
         "管理提醒對象": lambda: reminder_handler.handle(event),
         "刪除提醒對象": lambda: reminder_handler.handle(event),
         "管理成員": lambda: reminder_handler.handle(event),
+        "新增提醒對象": lambda: reminder_handler.handle(event),
     }
 
     if text in high_priority_keywords:
         UserService.delete_user_simple_state(user_id)
         UserService.clear_user_complex_state(user_id)
         high_priority_keywords[text]()
+        return
+    
+    # 檢查是否為成員選擇（在清除狀態之前）
+    user_state = UserService.get_user_simple_state(user_id)
+    if user_state == "selecting_member_for_reminder":
+        print(f"🔍 [line_webhook] 檢測到成員選擇: {text}")
+        reminder_handler.handle(event)
         return
 
     # 第二優先級：特定流程的文字觸發
@@ -117,7 +127,7 @@ def handle_message_dispatcher(event):
     print(f"🔍 包含'照片上傳成功': {'照片上傳成功' in text}")
     print(f"🔍 包含'任務ID:': {'任務ID:' in text}")
     
-    if ("照片上傳成功" in text and "任務ID:" in text) or text == '📝 預覽手動修改結果':
+    if ("照片上傳成功" in text and "任務ID:" in text) or text == '📝 預覽手動修改結果' or text == '測試fastapi':
         print(f"✅ 訊息匹配成功，轉發到 prescription_handler")
         prescription_handler.handle(event)
         return
@@ -125,6 +135,12 @@ def handle_message_dispatcher(event):
     # 新增：處理 LIFF 上傳的訊息（沒有任務ID的情況）
     if "照片上傳成功" in text and "正在分析中" in text:
         print(f"✅ LIFF 上傳訊息匹配成功，轉發到 prescription_handler")
+        prescription_handler.handle(event)
+        return
+    
+    # 新增：處理成員選擇後的文字訊息
+    if "為「" in text and "」掃描藥單" in text:
+        print(f"✅ 檢測到成員選擇訊息，轉發到 prescription_handler")
         prescription_handler.handle(event)
         return
     # 處理直接發送的「掃描新藥單」文字訊息
@@ -177,14 +193,15 @@ def handle_query_prescription(event):
         print(f"🔍 查詢藥歷 - 用戶ID: {user_id}")
         
         UserService.clear_user_complex_state(user_id)
-        members = UserService.get_user_members(user_id)
         
-        print(f"🔍 查詢藥歷 - 找到成員數量: {len(members)}")
-        print(f"🔍 查詢藥歷 - 成員列表: {[m.get('member', 'Unknown') for m in members]}")
-        
-        reply_message = flex_prescription.create_patient_selection_message(members, 'query')
+        # 顯示藥歷管理選單
+        reply_message = flex_prescription.create_management_menu(
+            title="📂 藥歷查詢管理",
+            primary_action_label="🔍 開始查詢藥歷",
+            primary_action_data="action=initiate_query_process"
+        )
         line_bot_api.reply_message(event.reply_token, reply_message)
-        print("✅ 藥歷查詢選單已發送")
+        print("✅ 藥歷管理選單已發送")
         
     except Exception as e:
         print(f"❌ 查詢藥歷處理錯誤: {e}")
@@ -272,7 +289,7 @@ def handle_login_request(event):
 
 @handler.add(FollowEvent)
 def handle_follow_event(event):
-    """處理用戶第一次加入 Bot 的事件"""
+    """處理用戶第一次加入 Bot 的事件 - 顯示個人資料蒐集聲明"""
     try:
         user_id = event.source.user_id
         current_app.logger.info(f"新用戶加入: {user_id}")
@@ -280,22 +297,19 @@ def handle_follow_event(event):
         # 建立或獲取用戶資料
         user_name = UserService.get_or_create_user(user_id)
         
+        # 簡化的歡迎訊息
+        welcome_message = (
+            "🎉 歡迎加入健康藥管家！\n\n"
+            "📋 個人資料蒐集聲明\n"
+            "當您加入並持續使用，即視為同意我們蒐集並使用您的個人資料，以提供相關服務。"
+            "（例如：LINE 顯示名稱、使用者 ID、互動紀錄等）。\n\n"
+            "本資料僅用於個人功能使用，感謝您的信任與配合！\n\n"
+            "請輸入「選單」查看所有功能。"
+        )
+        
         # 發送歡迎訊息
-        welcome_text = f"🎉 歡迎加入家庭健康小幫手，{user_name}！\n\n為了提供您更完整的個人化服務，建議您先完成身份驗證。"
-        
-        # 建立登入卡片
-        from flask import url_for
-        login_url = url_for('auth.login', _external=True)
-        login_card = flex_settings.create_login_card(login_url)
-        
-        # 發送歡迎訊息和登入卡片
-        messages = [
-            TextSendMessage(text=welcome_text),
-            FlexSendMessage(alt_text="會員登入", contents=login_card)
-        ]
-        
-        line_bot_api.reply_message(event.reply_token, messages)
-        current_app.logger.info(f"已向新用戶 {user_name} ({user_id}) 發送歡迎訊息和登入卡片")
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=welcome_message))
+        current_app.logger.info(f"已向新用戶 {user_name} ({user_id}) 發送歡迎訊息")
         
     except Exception as e:
         current_app.logger.error(f"處理新用戶加入事件錯誤: {e}")
@@ -316,6 +330,11 @@ def handle_postback_dispatcher(event):
     
     if data_str.startswith('relation:'):
         family_handler.handle(event)
+        return
+    
+    # 處理圖文選單的直接文字 postback（暫時保留，直到圖文選單更新為 MessageAction）
+    if data_str == "我的藥歷":
+        handle_query_prescription(event)
         return
     
     try:
@@ -347,19 +366,20 @@ def handle_postback_dispatcher(event):
         return
 
     prescription_actions = [
-        'initiate_scan_process', 'initiate_query_process',
+        'initiate_scan_process', 'initiate_query_process', 'prescription_model_select',
         'select_patient_for_scan', 'start_camera', 'manual_edit_liff', 'provide_visit_date', 
         'confirm_save_final', 'list_records', 'view_record_details', 
         'confirm_delete_record', 'execute_delete_record', 'load_record_as_draft', 'cancel_task'
     ]
     family_actions = [
         'gen_code', 'confirm_bind', 'manage_family', 'cancel_bind',
-        'edit_nickname', 'delete_binding'
+        'edit_nickname', 'delete_binding', 'query_family'
     ]
     reminder_actions = [
         'confirm_delete_reminder', 'execute_delete_reminder', 'clear_reminders_for_member',
         'add_member_profile', 'delete_member_profile_confirm', 'view_existing_reminders',
-        'add_from_prescription', 'rename_member_profile', 'execute_delete_member_profile'
+        'add_from_prescription', 'rename_member_profile', 'execute_delete_member_profile',
+        'delete_reminder', 'view_reminders_page'
     ]
     pill_actions = [
         'select_model_mode', 'use_single_model', 'show_model_info', 'back_to_model_menu',

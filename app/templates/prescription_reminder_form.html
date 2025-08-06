@@ -202,10 +202,59 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // 根據頻率分組藥物
+    // 安全的頻率顯示函數，實施方案1B - 移到全域作用域
+    function getSafeFrequencyDisplay(med) {
+        try {
+            // 第1優先：frequency_name (如 "一日三次")
+            if (med.frequency_name && isValidFrequency(med.frequency_name)) {
+                return med.frequency_name;
+            }
+            
+            // 第2優先：frequency_code 翻譯
+            if (med.frequency_code && isValidFrequency(med.frequency_code)) {
+                const translated = translateFrequencyCode(med.frequency_code);
+                if (translated) return translated;
+            }
+            
+            // 第3優先：frequency_text
+            if (med.frequency_text && isValidFrequency(med.frequency_text)) {
+                return med.frequency_text;
+            }
+            
+            // 最後回退：預設值
+            return "頻率請諮詢醫師";
+            
+        } catch (error) {
+            console.error('頻率顯示錯誤:', error);
+            return "頻率請諮詢醫師";
+        }
+    }
+    
+    function isValidFrequency(freq) {
+        if (!freq) return false;
+        const freqStr = String(freq).trim().toLowerCase();
+        const invalidPatterns = ['null', 'none', 'n/a', 'undefined', ''];
+        return !invalidPatterns.includes(freqStr);
+    }
+    
+    function translateFrequencyCode(code) {
+        const codeMap = {
+            'QD': '一日一次',
+            'BID': '一日兩次', 
+            'TID': '一日三次',
+            'QID': '一日四次',
+            'PRN': '需要時使用',
+            'HS': '睡前服用',
+            'AC': '飯前服用',
+            'PC': '飯後服用'
+        };
+        return codeMap[code?.toUpperCase()] || null;
+    }
+
     function groupMedicationsByFrequency(medications) {
         const groups = {};
         medications.forEach(med => {
-            const frequencyText = med.frequency_text || '未設定頻率';
+            const frequencyText = getSafeFrequencyDisplay(med);
             const timesPerDay = getTimesPerDayFromFrequency(med.frequency_count_code);
             const key = `${frequencyText} (${timesPerDay}次)`;
             
@@ -300,7 +349,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const card = document.createElement('div');
         card.className = 'form-group';
         card.dataset.presetKey = key;
-        card.innerHTML = `<label class="form-label">${key}</label><p class="drug-list">包含: ${data.drugs.join(', ')}</p>`;
+        card.innerHTML = `
+            <label class="form-label">${key}</label>
+            <p class="drug-list">包含: ${data.drugs.join(', ')}</p>
+            <p class="frequency-warning" style="font-size: 0.75em; color: #666; margin-top: 5px;">⚠️ 請以醫師處方為準，如有疑問請諮詢醫師</p>
+        `;
         const timeGrid = document.createElement('div');
         timeGrid.className = 'time-input-grid';
         for (let i = 1; i <= data.times_per_day; i++) {
@@ -333,11 +386,25 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="time-input-wrapper"><input type="time" class="time-input detail-time-input" data-time-index="${i + 1}"></div>`).join('');
             
         card.innerHTML = `
-            <div class="drug-card-header"><span class="drug-card-title">${drugName}</span><span class="toggle-icon">▼</span></div>
+            <div class="drug-card-header">
+                <span class="drug-card-title">${drugName}</span>
+                <span class="toggle-icon">▼</span>
+            </div>
             <div class="drug-card-body">
-                <div class="form-group"><label class="form-label">劑量</label><input type="text" class="form-input dose-quantity-input" value="${doseQuantity}" readonly></div>
-                <div class="form-group"><label class="form-label">服用時間</label><div class="time-input-grid">${timeInputsHtml}</div></div>
-                <div class="form-group"><label class="form-label">備註</label><textarea class="form-input notes-input" placeholder="可選填，例如：飯後服用"></textarea></div>
+                <div class="form-group">
+                    <label class="form-label">劑量</label>
+                    <input type="text" class="form-input dose-quantity-input" value="${doseQuantity}" readonly>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">建議頻率：${getSafeFrequencyDisplay(med)}</label>
+                    <p style="font-size: 0.75em; color: #666; margin: 5px 0;">⚠️ 請以醫師處方為準，如有疑問請諮詢醫師</p>
+                    <label class="form-label">服用時間</label>
+                    <div class="time-input-grid">${timeInputsHtml}</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">備註</label>
+                    <textarea class="form-input notes-input" placeholder="可選填，例如：飯後服用"></textarea>
+                </div>
             </div>`;
         return card;
     }
@@ -388,8 +455,18 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             const result = await response.json();
             if (!response.ok || !result.success) throw new Error(result.message || '儲存失敗');
-            alert('用藥提醒已成功儲存！');
-            if (liff.isInClient()) liff.closeWindow();
+            
+            // 發送 LIFF 訊息確認並關閉視窗
+            if (liff.isInClient()) {
+                await liff.sendMessages([{
+                    type: 'text',
+                    text: '✅ 用藥提醒已設定完成！系統將按照您設定的時間發送提醒。'
+                }]);
+                liff.closeWindow();
+            } else {
+                // 如果不在 LINE 客戶端中，顯示簡單確認
+                document.body.innerHTML = '<div style="text-align:center;padding:50px;"><h2>✅ 用藥提醒已設定完成</h2><p>請返回 LINE 查看確認訊息</p></div>';
+            }
         } catch (error) {
             console.error('儲存提醒失敗:', error);
             alert(`儲存提醒失敗: ${error.message}`);

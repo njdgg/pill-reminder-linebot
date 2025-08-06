@@ -9,23 +9,37 @@ from zoneinfo import ZoneInfo
 import random
 import string
 import time
+import pytz
 
 # --- 資料庫連線管理 ---
 
 def get_db_connection():
-    """從 Flask 的 g 物件取得資料庫連線，若不存在則建立一個。"""
+    """從 Flask 的 g 物件取得資料庫連線，若不存在則透過 Cloud SQL Unix socket 建立。"""
     try:
         if 'db' not in g:
-            g.db = pymysql.connect(
-                host=os.environ.get('DB_HOST'),
-                user=os.environ.get('DB_USER'),
-                password=os.environ.get('DB_PASS'),
-                database=os.environ.get('DB_NAME'),
-                port=int(os.environ.get('DB_PORT', 3306)),
-                charset='utf8mb4',
-                cursorclass=pymysql.cursors.DictCursor,
-                connect_timeout=10
-            )
+            if os.environ.get("DB_SOCKET_PATH"):
+                # 使用 Cloud SQL Auth Proxy 的 Unix socket 路徑
+                g.db = pymysql.connect(
+                    user=os.environ.get('DB_USER'),
+                    password=os.environ.get('DB_PASS'),
+                    database=os.environ.get('DB_NAME'),
+                    unix_socket=os.environ.get('DB_SOCKET_PATH'),
+                    charset='utf8mb4',
+                    cursorclass=pymysql.cursors.DictCursor,
+                    connect_timeout=10
+                )
+            else:
+                # fallback: 一般 host-based 連線（例如本機測試用）
+                g.db = pymysql.connect(
+                    host=os.environ.get('DB_HOST'),
+                    user=os.environ.get('DB_USER'),
+                    password=os.environ.get('DB_PASS'),
+                    database=os.environ.get('DB_NAME'),
+                    port=int(os.environ.get('DB_PORT', 3306)),
+                    charset='utf8mb4',
+                    cursorclass=pymysql.cursors.DictCursor,
+                    connect_timeout=10
+                )
         return g.db
     except pymysql.MySQLError as e:
         print(f"資料庫連線錯誤: {e}")
@@ -52,7 +66,9 @@ class DB:
     def save_simple_state(user_id, state_value, minutes_to_expire=5):
         db = get_db_connection()
         if not db: return
-        expires_at = datetime.now(timezone.utc) + timedelta(minutes=minutes_to_expire)
+        tz_name = os.getenv("TZ", "UTC")
+        tz = pytz.timezone(tz_name)
+        expires_at = datetime.now(tz) + timedelta(minutes=minutes_to_expire)
         with db.cursor() as cursor:
             query = "REPLACE INTO state (recorder_id, state, expires_at) VALUES (%s, %s, %s)"
             cursor.execute(query, (user_id, state_value, expires_at))
@@ -116,18 +132,23 @@ class DB:
     def get_or_create_user(user_id, user_name):
         db = get_db_connection()
         if not db: return None
-        with db.cursor() as cursor:
-            cursor.execute("SELECT recorder_id FROM users WHERE recorder_id = %s", (user_id,))
-            if cursor.fetchone():
+        try:
+            with db.cursor() as cursor:
+                cursor.execute("SELECT recorder_id FROM users WHERE recorder_id = %s", (user_id,))
+                if cursor.fetchone():
+                    return user_id
+                cursor.execute(
+                    "INSERT INTO users (recorder_id, user_name) VALUES (%s, %s) ON DUPLICATE KEY UPDATE user_name = %s",
+                    (user_id, user_name, user_name)
+                )
+                db.commit()
+                # 同時為新用戶建立一個 "本人" 的成員
+                DB.add_member(user_id, "本人")
                 return user_id
-            cursor.execute(
-                "INSERT INTO users (recorder_id, user_name) VALUES (%s, %s) ON DUPLICATE KEY UPDATE user_name = %s",
-                (user_id, user_name, user_name)
-            )
-            db.commit()
-            # 同時為新用戶建立一個 "本人" 的成員
-            DB.add_member(user_id, "本人")
-            return user_id
+        except Exception as e:
+            print(f"get_or_create_user 錯誤: {e}")
+            db.rollback()
+            return None
 
     @staticmethod
     def add_member(recorder_id, member_name, is_self=False, bound_user_id=None):
@@ -298,12 +319,39 @@ class DB:
 
     @staticmethod
     def delete_family_binding(user_id, recipient_id):
-        """删除家人绑定关系"""
+        """删除家人绑定关系並清理相關資料"""
         db = get_db_connection()
         if not db: return 0
         with db.cursor() as cursor:
-            query = "DELETE FROM invitation_recipients WHERE recorder_id = %s AND recipient_line_id = %s"
-            cursor.execute(query, (user_id, recipient_id))
+            # 獲取綁定關係資訊
+            cursor.execute("SELECT relation_type FROM invitation_recipients WHERE recorder_id = %s AND recipient_line_id = %s", (user_id, recipient_id))
+            binding = cursor.fetchone()
+            
+            if binding:
+                relation_type = binding['relation_type']
+                
+                # 刪除相關的藥歷記錄（默認刪除策略）
+                # 1. 刪除 user_id 為 recipient_id 建立的記錄
+                cursor.execute("""
+                    DELETE rd FROM record_details rd 
+                    INNER JOIN medication_records mr ON rd.record_id = mr.mr_id 
+                    INNER JOIN medication_main mm ON mr.mm_id = mm.mm_id 
+                    WHERE mm.recorder_id = %s AND mm.member = %s
+                """, (user_id, relation_type))
+                
+                cursor.execute("""
+                    DELETE mr FROM medication_records mr 
+                    INNER JOIN medication_main mm ON mr.mm_id = mm.mm_id 
+                    WHERE mm.recorder_id = %s AND mm.member = %s
+                """, (user_id, relation_type))
+                
+                cursor.execute("DELETE FROM medication_main WHERE recorder_id = %s AND member = %s", (user_id, relation_type))
+                
+                # 2. 刪除相關的用藥提醒
+                cursor.execute("DELETE FROM medicine_schedule WHERE recorder_id = %s AND member = %s", (user_id, relation_type))
+            
+            # 刪除綁定關係
+            cursor.execute("DELETE FROM invitation_recipients WHERE recorder_id = %s AND recipient_line_id = %s", (user_id, recipient_id))
             db.commit()
             return cursor.rowcount
 
@@ -365,8 +413,8 @@ class DB:
                 source = "手動" if "manual" in task_info.get("source", "") else "藥單"
                 
                 for med in medications:
-                    sql_rec = "INSERT INTO medication_records (mm_id, recorder_id, member, drug_name_en, drug_name_zh, source_detail, dose_quantity, days, frequency_count_code, frequency_timing_code) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
-                    cursor.execute(sql_rec, (mm_id, recorder_id, member, med.get('drug_name_en'), med.get('drug_name_zh'), source, med.get('dose_quantity'), days, med.get('frequency_count_code'), med.get('frequency_timing_code')))
+                    sql_rec = "INSERT INTO medication_records (mm_id, recorder_id, member, drug_name_en, drug_name_zh, source_detail, dose_quantity, days, frequency_count_code, frequency_timing_code, main_use, side_effects) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+                    cursor.execute(sql_rec, (mm_id, recorder_id, member, med.get('drug_name_en'), med.get('drug_name_zh'), source, med.get('dose_quantity'), days, med.get('frequency_count_code'), med.get('frequency_timing_code'), med.get('main_use'), med.get('side_effects')))
                     mr_id = cursor.lastrowid
 
                     dose_str = str(med.get('dose_quantity', '')).strip()
@@ -384,7 +432,13 @@ class DB:
         db = get_db_connection()
         if not db: return None
         with db.cursor() as cursor:
-            cursor.execute("SELECT * FROM medication_main WHERE mm_id = %s", (mm_id,))
+            # 加入建立者資訊
+            cursor.execute("""
+                SELECT mm.*, u.user_name as creator_name
+                FROM medication_main mm
+                LEFT JOIN users u ON mm.recorder_id = u.recorder_id
+                WHERE mm.mm_id = %s
+            """, (mm_id,))
             main_record = cursor.fetchone()
             if not main_record: return None
             
@@ -392,6 +446,36 @@ class DB:
             med_details = cursor.fetchall()
             
             for med in med_details:
+                # 清理藥物名稱中可能導致 JSON 解析錯誤的字元
+                if med.get('drug_name_zh'):
+                    original = med['drug_name_zh']
+                    if original:
+                        # 清理各種引號和特殊字元
+                        cleaned = (original
+                                 .replace('"', '')  # 半形雙引號
+                                 .replace('"', '')  # 全形左雙引號
+                                 .replace('"', '')  # 全形右雙引號
+                                 .replace("'", '')  # 半形單引號
+                                 .replace(''', '')  # 全形左單引號
+                                 .replace(''', '')  # 全形右單引號
+                                 .replace('\\', '') # 反斜線
+                                 .strip())          # 去除首尾空白
+                        med['drug_name_zh'] = cleaned
+                        
+                if med.get('drug_name_en'):
+                    original = med['drug_name_en']
+                    if original:
+                        cleaned = (original
+                                 .replace('"', '')
+                                 .replace('"', '')
+                                 .replace('"', '')
+                                 .replace("'", '')
+                                 .replace(''', '')
+                                 .replace(''', '')
+                                 .replace('\\', '')
+                                 .strip())
+                        med['drug_name_en'] = cleaned
+                
                 cursor.execute("SELECT drug_id, dosage_value, dosage_unit, frequency_text FROM record_details WHERE record_id = %s", (med.get('mr_id'),))
                 detail = cursor.fetchone()
                 if detail:
@@ -518,25 +602,106 @@ class DB:
 
     @staticmethod
     def get_records_by_member(user_id, member_name):
-        """获取指定成员的药单记录"""
+        """获取指定成员的药单记录（包含别人为自己建立的）"""
         db = get_db_connection()
         if not db: return []
         with db.cursor() as cursor:
-            query = "SELECT * FROM medication_main WHERE recorder_id = %s AND member = %s ORDER BY created_at DESC"
-            cursor.execute(query, (user_id, member_name))
+            if member_name == "本人":
+                # 查詢所有與該用戶相關的記錄：自己建立的 + 別人為自己建立的
+                query = """
+                    SELECT DISTINCT mm.*, u.user_name as creator_name
+                    FROM medication_main mm
+                    LEFT JOIN users u ON mm.recorder_id = u.recorder_id
+                    LEFT JOIN invitation_recipients ir ON mm.recorder_id = ir.recorder_id 
+                    WHERE (
+                        (mm.recorder_id = %s AND mm.member = '本人') 
+                        OR 
+                        (ir.recipient_line_id = %s AND mm.member = ir.relation_type)
+                    )
+                    ORDER BY mm.created_at DESC
+                """
+                cursor.execute(query, (user_id, user_id))
+            else:
+                # 查詢指定成員的記錄（包含自己為該成員建立的 + 該成員自己建立的）
+                print(f"[DEBUG] 查詢藥歷 - user_id: {user_id}, member_name: {member_name}")
+                
+                # 先通過綁定關係找到該成員的真實用戶ID
+                cursor.execute("""
+                    SELECT recipient_line_id 
+                    FROM invitation_recipients 
+                    WHERE recorder_id = %s AND relation_type = %s
+                """, (user_id, member_name))
+                
+                binding = cursor.fetchone()
+                if not binding:
+                    print(f"[DEBUG] 沒有找到藥歷綁定關係: recorder_id={user_id}, relation_type={member_name}")
+                    # 如果沒有綁定關係，只查詢自己建立的記錄
+                    query = """
+                        SELECT mm.*, u.user_name as creator_name
+                        FROM medication_main mm
+                        LEFT JOIN users u ON mm.recorder_id = u.recorder_id
+                        WHERE mm.recorder_id = %s AND mm.member = %s 
+                        ORDER BY mm.created_at DESC
+                    """
+                    cursor.execute(query, (user_id, member_name))
+                else:
+                    actual_member_id = binding['recipient_line_id']
+                    print(f"[DEBUG] 找到成員真實ID: {actual_member_id}")
+                    
+                    # 查詢兩種情況的記錄
+                    query = """
+                        SELECT DISTINCT mm.*, u.user_name as creator_name
+                        FROM medication_main mm
+                        LEFT JOIN users u ON mm.recorder_id = u.recorder_id
+                        WHERE (
+                            -- 自己為該成員建立的記錄
+                            (mm.recorder_id = %s AND mm.member = %s)
+                            OR
+                            -- 該成員自己建立的記錄
+                            (mm.recorder_id = %s AND mm.member = '本人')
+                        )
+                        ORDER BY mm.created_at DESC
+                    """
+                    cursor.execute(query, (user_id, member_name, actual_member_id))
+            
             return cursor.fetchall()
 
     @staticmethod
     def delete_record_by_mm_id(user_id, mm_id):
-        """删除指定的药单记录"""
+        """删除指定的药单记录（支持刪除關於自己的記錄）"""
         db = get_db_connection()
         if not db: return 0
         with db.cursor() as cursor:
-            # 先检查所有权
-            query = "SELECT COUNT(*) as count FROM medication_main WHERE mm_id = %s AND recorder_id = %s"
-            cursor.execute(query, (mm_id, user_id))
-            result = cursor.fetchone()
-            if not result or result['count'] == 0:
+            # 檢查權限：建立者 OR 記錄對象本人
+            query = """
+                SELECT mm.*, ir.recipient_line_id, ir.relation_type
+                FROM medication_main mm
+                LEFT JOIN invitation_recipients ir ON mm.recorder_id = ir.recorder_id
+                WHERE mm.mm_id = %s
+            """
+            cursor.execute(query, (mm_id,))
+            record = cursor.fetchone()
+            
+            if not record:
+                return 0
+            
+            # 權限檢查邏輯
+            can_delete = False
+            
+            # 情況1：用戶是記錄建立者
+            if record['recorder_id'] == user_id:
+                can_delete = True
+            
+            # 情況2：用戶是記錄對象本人（通過綁定關係）
+            elif (record.get('recipient_line_id') == user_id and 
+                  record.get('relation_type') == record['member']):
+                can_delete = True
+            
+            # 情況3：記錄對象是"本人"且用戶就是被記錄者（直接匹配）
+            elif record['member'] == '本人' and record.get('recipient_line_id') == user_id:
+                can_delete = True
+            
+            if not can_delete:
                 return 0
             
             # 删除相关记录
@@ -769,19 +934,152 @@ class DB:
             return False
 
     @staticmethod
-    def get_all_logs_by_recorder(recorder_id):
-        """獲取指定用戶的所有健康記錄"""
+    def get_logs_for_specific_member(recorder_id, target_member_id):
+        """獲取特定成員的健康記錄（包含邀請者建立的 + 該成員自建的）"""
         db = get_db_connection()
         if not db: return []
         
         try:
             with db.cursor() as cursor:
+                print(f"[DEBUG] 查詢特定成員記錄: recorder_id={recorder_id}, target_member_id={target_member_id}")
+                
+                # 先通過綁定關係找到該成員的真實用戶ID
                 cursor.execute("""
-                    SELECT * FROM health_log 
-                    WHERE recorder_id = %s 
-                    ORDER BY record_time DESC
+                    SELECT recipient_line_id 
+                    FROM invitation_recipients 
+                    WHERE recorder_id = %s AND relation_type = %s
+                """, (recorder_id, target_member_id))
+                
+                binding = cursor.fetchone()
+                if not binding:
+                    print(f"[DEBUG] 沒有找到綁定關係: recorder_id={recorder_id}, relation_type={target_member_id}")
+                    return []
+                
+                actual_member_id = binding['recipient_line_id']
+                print(f"[DEBUG] 找到成員真實ID: {actual_member_id}")
+                
+                # 查詢兩種情況的記錄
+                cursor.execute("""
+                    SELECT hl.*, u.user_name as recorder_name
+                    FROM health_log hl
+                    LEFT JOIN users u ON hl.recorder_id = u.recorder_id
+                    WHERE (
+                        -- 邀請者為該成員建立的記錄
+                        (hl.recorder_id = %s AND hl.target_person = %s)
+                        OR
+                        -- 該成員自己建立的記錄
+                        (hl.recorder_id = %s AND hl.target_person = '本人')
+                    )
+                    ORDER BY hl.record_time DESC
+                """, (recorder_id, target_member_id, actual_member_id))
+                
+                result = cursor.fetchall()
+                print(f"[DEBUG] 查詢到的記錄數量: {len(result)}")
+                
+                return result
+                
+                return cursor.fetchall()
+                
+        except Exception as e:
+            print(f"查詢特定成員健康記錄失敗: {e}")
+            return []
+
+    @staticmethod
+    def get_all_logs_by_recorder(recorder_id):
+        """獲取指定用戶的健康記錄（只包含關於自己的記錄）"""
+        db = get_db_connection()
+        if not db: return []
+        
+        try:
+            with db.cursor() as cursor:
+                # 查詢所有與該用戶相關的健康記錄：自己建立的 + 別人為自己建立的
+                print(f"[DEBUG] 查詢健康記錄，用戶ID: {recorder_id}")
+                
+                # 先檢查綁定關係
+                cursor.execute("""
+                    SELECT recorder_id, relation_type 
+                    FROM invitation_recipients 
+                    WHERE recipient_line_id = %s
                 """, (recorder_id,))
-                logs = cursor.fetchall()
+                bindings = cursor.fetchall()
+                print(f"[DEBUG] 用戶的綁定關係: {bindings}")
+                
+                # 先查詢用戶自己建立的關於自己的記錄
+                cursor.execute("""
+                    SELECT hl.*, u.user_name as recorder_name
+                    FROM health_log hl
+                    LEFT JOIN users u ON hl.recorder_id = u.recorder_id
+                    WHERE hl.recorder_id = %s AND hl.target_person = '本人'
+                    ORDER BY hl.record_time DESC
+                """, (recorder_id,))
+                own_logs = cursor.fetchall()
+                print(f"[DEBUG] 用戶自己建立的關於自己的記錄數量: {len(own_logs)}")
+                
+                # 調試：檢查是否有為別人建立的記錄被錯誤包含
+                cursor.execute("""
+                    SELECT hl.target_person, COUNT(*) as count
+                    FROM health_log hl
+                    WHERE hl.recorder_id = %s
+                    GROUP BY hl.target_person
+                """, (recorder_id,))
+                target_distribution = cursor.fetchall()
+                print(f"[DEBUG] 用戶建立記錄的target_person分布: {target_distribution}")
+                
+                # 只查詢別人為該用戶建立的記錄（不包含被邀請者自建記錄）
+                cursor.execute("""
+                    SELECT hl.*, u.user_name as recorder_name
+                    FROM health_log hl
+                    LEFT JOIN users u ON hl.recorder_id = u.recorder_id
+                    INNER JOIN invitation_recipients ir ON hl.recorder_id = ir.recorder_id 
+                    WHERE ir.recipient_line_id = %s AND hl.target_person = ir.relation_type
+                    ORDER BY hl.record_time DESC
+                """, (recorder_id,))
+                others_logs = cursor.fetchall()
+                print(f"[DEBUG] 別人為該用戶建立的記錄數量: {len(others_logs)}")
+                
+                # 如果沒有找到記錄，進一步調試
+                if len(others_logs) == 0 and len(bindings) > 0:
+                    print(f"[DEBUG] 沒有找到別人建立的記錄，進一步調試...")
+                    for binding in bindings:
+                        cursor.execute("""
+                            SELECT hl.target_person, COUNT(*) as count
+                            FROM health_log hl
+                            WHERE hl.recorder_id = %s
+                            GROUP BY hl.target_person
+                        """, (binding['recorder_id'],))
+                        target_counts = cursor.fetchall()
+                        print(f"[DEBUG] 記錄者 {binding['recorder_id']} 的 target_person 分布: {target_counts}")
+                        print(f"[DEBUG] 期望的 relation_type: {binding['relation_type']}")
+                
+                # 合併結果並去重
+                all_logs = []
+                seen_ids = set()
+                
+                # 處理自己建立的記錄
+                if own_logs:
+                    for log in own_logs:
+                        log_id = log.get('log_id')  # 修正：使用正確的欄位名稱
+                        if log_id and log_id not in seen_ids:
+                            all_logs.append(log)
+                            seen_ids.add(log_id)
+                
+                # 處理別人為自己建立的記錄
+                if others_logs:
+                    for log in others_logs:
+                        log_id = log.get('log_id')  # 修正：使用正確的欄位名稱
+                        if log_id and log_id not in seen_ids:
+                            all_logs.append(log)
+                            seen_ids.add(log_id)
+                
+                # 安全的按時間排序
+                try:
+                    all_logs.sort(key=lambda x: x.get('record_time') or '1900-01-01', reverse=True)
+                except Exception as e:
+                    print(f"[DEBUG] 排序錯誤: {e}")
+                    # 如果排序失敗，至少返回未排序的結果
+                
+                logs = all_logs
+                print(f"[DEBUG] 最終返回記錄數量: {len(logs)}")
                 
                 # 轉換時間格式並將 Decimal 轉為字串
                 taipei_tz = ZoneInfo("Asia/Taipei")

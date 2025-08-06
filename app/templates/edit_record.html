@@ -21,9 +21,96 @@
   .radio-group label { font-weight: normal; display: flex; align-items: center; }
   .radio-group input { width: auto; margin-right: 5px; }
   textarea { resize: vertical; min-height: 80px; }
-  .med-card { border: 1px solid #ddd; border-radius: 8px; margin-bottom: 20px; position: relative; overflow: hidden; }
-  .med-header { background-color: #f7f7f7; padding: 10px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
-  .delete-btn { background: #ff4d4f; color: white; border: none; border-radius: 50%; width: 24px; height: 24px; font-weight: bold; cursor: pointer; line-height: 24px; text-align: center; }
+  .med-card { border: 1px solid #ddd; border-radius: 8px; margin-bottom: 20px; position: relative; overflow: hidden; transition: all 0.3s ease; }
+  .med-card.expanded { box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+  
+  .med-summary { 
+    background-color: #f7f7f7; 
+    padding: 15px; 
+    display: flex; 
+    justify-content: space-between; 
+    align-items: center;
+    cursor: default;
+    border-bottom: 1px solid #eee;
+  }
+  
+  .med-name { 
+    font-weight: bold; 
+    font-size: 1.1em; 
+    color: #333;
+    flex: 1;
+  }
+  
+  .med-actions { 
+    display: flex; 
+    gap: 8px; 
+  }
+  
+  .btn-edit, .btn-delete-simple { 
+    padding: 8px 16px; 
+    border: none; 
+    border-radius: 4px; 
+    cursor: pointer; 
+    font-size: 1.1em;
+    font-weight: bold;
+    transition: all 0.2s;
+    min-width: 60px;
+  }
+  
+  .btn-edit { 
+    background: #d0f0c0; 
+    color: #057033; 
+  }
+  .btn-edit:hover { background: #c1e7b1; }
+  
+  .btn-delete-simple { 
+    background: #FCD5CE; 
+    color: #BA181B; 
+  }
+  .btn-delete-simple:hover { background: #F8AD9D; }
+  
+  .med-details { 
+    padding: 20px; 
+    background: white;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease, padding 0.3s ease;
+  }
+  
+  .med-details.expanded { 
+    max-height: 800px; 
+    padding: 20px;
+  }
+  
+  .med-edit-actions {
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid #eee;
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+  }
+  
+  .btn-confirm, .btn-cancel {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: all 0.2s;
+  }
+  
+  .btn-confirm {
+    background: #28a745;
+    color: white;
+  }
+  .btn-confirm:hover { background: #1e7e34; }
+  
+  .btn-cancel {
+    background: #6c757d;
+    color: white;
+  }
+  .btn-cancel:hover { background: #545b62; }
   .footer { padding: 20px; text-align: center; }
   button { padding: 12px 20px; border: none; border-radius: 8px; cursor: pointer; font-size: 1em; font-weight: bold; width: 100%; }
   .btn-primary { background-color: #28a745; color: white; }
@@ -97,15 +184,19 @@
         }).join('');
 
         card.innerHTML = `
-          <div class="med-header">藥物 #${pageState.medCounter}</div>
-          <button class="delete-btn" data-target="${cardId}">×</button>
-          <div class="med-body">
+          <div class="med-summary">
+            <span class="med-name">${med.drug_name_zh || med.drug_name_en || '未命名藥物'}</span>
+            <div class="med-actions">
+              <button class="btn-edit" data-target="${cardId}">編輯</button>
+              <button class="btn-delete-simple" data-target="${cardId}">刪除</button>
+            </div>
+          </div>
+          <div class="med-details" id="${cardId}-details">
             <input type="hidden" class="drug-name-en" value="${med.drug_name_en || ''}">
             <input type="hidden" class="matched-drug-id" value="${med.matched_drug_id || ''}">
+            <input type="hidden" class="dosage-unit" value="${med.dosage_unit || ''}">
             <div class="form-group"><label>藥物中文名稱</label><input type="text" class="drug-name-zh" placeholder="請輸入藥物中文名稱" value="${med.drug_name_zh || ''}"></div>
             <div class="form-group"><label>單次劑量</label><input type="text" class="dose-quantity" placeholder="例如: 1.00" value="${med.dose_quantity || ''}"></div>
-            <!-- 【核心修正】新增一個隱藏欄位來儲存 dosage_unit，確保資訊不遺失 -->
-            <input type="hidden" class="dosage-unit" value="${med.dosage_unit || ''}">
             <div class="form-group">
                 <label>服用次數</label>
                 <select class="frequency-count-code">${countOptionsHtml}</select>
@@ -116,11 +207,86 @@
             </div>
             <div class="form-group"><label>主要用途</label><textarea class="main-use" placeholder="請輸入主要用途">${med.main_use || ''}</textarea></div>
             <div class="form-group"><label>常見副作用</label><textarea class="side-effects" placeholder="請輸入常見副作用">${med.side_effects || ''}</textarea></div>
+            <div class="med-edit-actions">
+              <button class="btn-cancel" data-target="${cardId}">取消</button>
+              <button class="btn-confirm" data-target="${cardId}">確認修改</button>
+            </div>
           </div>`;
         medContainer.appendChild(card);
-        card.querySelector('.delete-btn').addEventListener('click', (e) => {
-            document.getElementById(e.target.dataset.target).remove();
+        
+        // 編輯按鈕事件
+        card.querySelector('.btn-edit').addEventListener('click', (e) => {
+            const targetId = e.target.dataset.target;
+            toggleCardExpansion(targetId);
         });
+        
+        // 刪除按鈕事件
+        card.querySelector('.btn-delete-simple').addEventListener('click', (e) => {
+            const targetId = e.target.dataset.target;
+            if (confirm('確定要刪除這個藥物嗎？')) {
+                document.getElementById(targetId).remove();
+            }
+        });
+        
+        // 確認修改按鈕事件
+        card.querySelector('.btn-confirm').addEventListener('click', (e) => {
+            const targetId = e.target.dataset.target;
+            confirmMedicationEdit(targetId);
+        });
+        
+        // 取消按鈕事件
+        card.querySelector('.btn-cancel').addEventListener('click', (e) => {
+            const targetId = e.target.dataset.target;
+            cancelMedicationEdit(targetId);
+        });
+    }
+
+    // 摺疊/展開卡片
+    function toggleCardExpansion(cardId) {
+        const card = document.getElementById(cardId);
+        const details = document.getElementById(cardId + '-details');
+        
+        if (details.classList.contains('expanded')) {
+            // 收合
+            details.classList.remove('expanded');
+            card.classList.remove('expanded');
+        } else {
+            // 展開
+            details.classList.add('expanded');
+            card.classList.add('expanded');
+        }
+    }
+
+    // 確認修改
+    function confirmMedicationEdit(cardId) {
+        const card = document.getElementById(cardId);
+        const nameInput = card.querySelector('.drug-name-zh');
+        const nameDisplay = card.querySelector('.med-name');
+        
+        // 更新顯示的藥物名稱
+        const newName = nameInput.value.trim() || '未命名藥物';
+        nameDisplay.textContent = newName;
+        
+        // 收合卡片
+        const details = document.getElementById(cardId + '-details');
+        details.classList.remove('expanded');
+        card.classList.remove('expanded');
+        
+        // 可以在這裡添加保存提示
+        console.log('藥物資訊已更新:', newName);
+    }
+
+    // 取消編輯
+    function cancelMedicationEdit(cardId) {
+        const card = document.getElementById(cardId);
+        const details = document.getElementById(cardId + '-details');
+        
+        // 收合卡片
+        details.classList.remove('expanded');
+        card.classList.remove('expanded');
+        
+        // 這裡可以添加恢復原始數據的邏輯
+        console.log('取消編輯');
     }
 
     function renderPage(data) {

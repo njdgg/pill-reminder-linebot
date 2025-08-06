@@ -2,37 +2,239 @@
 
 from linebot.models import (
     FlexSendMessage, BubbleContainer, CarouselContainer, BoxComponent,
-    TextComponent, ButtonComponent, SeparatorComponent,
+    TextComponent, ButtonComponent, SeparatorComponent, ImageComponent,
     PostbackAction, MessageAction, URIAction, CameraAction,
     QuickReply, QuickReplyButton, TextSendMessage
 )
 from urllib.parse import quote
 from datetime import datetime
 
+def create_prescription_model_choice():
+    """建立藥單辨識模型選擇的 Flex 訊息"""
+    return {
+        "type": "carousel",
+        "contents": [
+            # 第一張卡片：模型選擇
+            {
+                "type": "bubble",
+                "size": "kilo",
+                "header": {
+                    "type": "box",
+                    "layout": "vertical",
+                    "contents": [
+                        {
+                            "type": "text",
+                            "text": "🤖 選擇分析模型",
+                            "weight": "bold",
+                            "size": "lg",
+                            "color": "#333333",
+                            "align": "center"
+                        }
+                    ],
+                    "backgroundColor": "#B9DCEC",
+                    "paddingAll": "md",
+                    "cornerRadius": "8px"
+                },
+                "body": {
+                    "type": "box",
+                    "layout": "vertical",
+                    "contents": [
+                        {
+                            "type": "text",
+                            "text": "請選擇要使用的分析方式：",
+                            "size": "sm",
+                            "color": "#666666",
+                            "align": "center",
+                            "margin": "md"
+                        },
+                        {
+                            "type": "separator",
+                            "margin": "md"
+                        },
+                        {
+                            "type": "box",
+                            "layout": "vertical",
+                            "contents": [
+                                {
+                                    "type": "button",
+                                    "style": "primary",
+                                    "color": "#4ECDC4",
+                                    "action": {
+                                        "type": "postback",
+                                        "label": "🧠 智能分析模式",
+                                        "data": "action=prescription_model_select&model=smart_filter"
+                                    }
+                                },
+                                {
+                                    "type": "button",
+                                    "style": "primary",
+                                    "color": "#FF6B6B",
+                                    "action": {
+                                        "type": "postback",
+                                        "label": "⚡ 快速識別模式",
+                                        "data": "action=prescription_model_select&model=api_ocr"
+                                    },
+                                    "margin": "sm"
+                                }
+                            ],
+                            "margin": "md"
+                        }
+                    ],
+                    "paddingAll": "md"
+                }
+            },
+            # 第二張卡片：模型說明
+            {
+                "type": "bubble",
+                "size": "kilo",
+                "header": {
+                    "type": "box",
+                    "layout": "vertical",
+                    "contents": [
+                        {
+                            "type": "text",
+                            "text": "📖 模型說明",
+                            "weight": "bold",
+                            "size": "lg",
+                            "color": "#333333",
+                            "align": "center"
+                        }
+                    ],
+                    "backgroundColor": "#B9DCEC",
+                    "paddingAll": "md",
+                    "cornerRadius": "8px"
+                },
+                "body": {
+                    "type": "box",
+                    "layout": "vertical",
+                    "contents": [
+                        {
+                            "type": "box",
+                            "layout": "vertical",
+                            "contents": [
+                                {
+                                    "type": "text",
+                                    "text": "🧠 智能分析模式",
+                                    "weight": "bold",
+                                    "size": "md",
+                                    "color": "#4ECDC4"
+                                },
+                                {
+                                    "type": "text",
+                                    "text": "• 使用AI智能篩選技術\n• 節省30% TOKEN成本\n• 完整的頻率解析演算法\n• 適合詳細處方籤分析",
+                                    "size": "xs",
+                                    "color": "#666666",
+                                    "wrap": True,
+                                    "margin": "sm"
+                                }
+                            ],
+                            "backgroundColor": "#F0F8F8",
+                            "paddingAll": "sm",
+                            "cornerRadius": "8px"
+                        },
+                        {
+                            "type": "separator",
+                            "margin": "md"
+                        },
+                        {
+                            "type": "box",
+                            "layout": "vertical",
+                            "contents": [
+                                {
+                                    "type": "text",
+                                    "text": "⚡ 快速識別模式",
+                                    "weight": "bold",
+                                    "size": "md",
+                                    "color": "#FF6B6B"
+                                },
+                                {
+                                    "type": "text",
+                                    "text": "• 使用組員的OCR API\n• 處理速度更快\n• 適合快速識別需求\n• 簡化的分析流程",
+                                    "size": "xs",
+                                    "color": "#666666",
+                                    "wrap": True,
+                                    "margin": "sm"
+                                }
+                            ],
+                            "backgroundColor": "#FFF0F0",
+                            "paddingAll": "sm",
+                            "cornerRadius": "8px",
+                            "margin": "md"
+                        }
+                    ],
+                    "paddingAll": "md"
+                }
+            }
+        ]
+    }
+
 def create_management_menu(title: str, primary_action_label: str, primary_action_data: str):
     """產生一個與「用藥提醒管理」風格統一的通用管理選單。"""
     bubble = BubbleContainer(
+        header=BoxComponent(
+            layout='vertical',
+            contents=[
+                TextComponent(text=title, weight='bold', size='lg', color='#1F2D3D', align='center')
+            ],
+            background_color='#B9DCEC',
+            padding_all='16px'
+        ),
         body=BoxComponent(
             layout='vertical', padding_all='20px', spacing='xl',
             contents=[
-                TextComponent(text=title, weight='bold', size='xl', align='center', color='#1F2937'),
-                SeparatorComponent(margin='lg'),
                 BoxComponent(
                     layout='vertical', margin='lg', spacing='md',
                     contents=[
-                        ButtonComponent(
+                        # ButtonComponent(
+                            # action=PostbackAction(label=primary_action_label, data=primary_action_data),
+                            # style='primary', color='#10B981', height='md'
+                        # ),
+                        BoxComponent(
+                            layout='vertical',
+                            background_color='#d0f0c0',
+                            corner_radius='md',
+                            padding_all='lg',
                             action=PostbackAction(label=primary_action_label, data=primary_action_data),
-                            style='primary', color='#10B981', height='md'
+                            contents=[
+                                TextComponent(
+                                    text=primary_action_label,
+                                    color='#057033',
+                                    weight='bold',
+                                    align='center',
+                                    size='lg'
+                                )
+                            ]
                         ),
-                        ButtonComponent(
-                            action=MessageAction(label='👥 管理提醒對象', text='管理提醒對象'),
-                            style='secondary', color='#3B82F6', height='md', margin='sm'
-                        ),
-                        ButtonComponent(
+                        BoxComponent(
+                            layout='vertical',
+                            padding_all='lg',
+                            background_color='#CBEEF3',  # 藍色背景
+                            corner_radius='md',
+                            action=MessageAction(label='✏️ 管理提醒對象', text='管理提醒對象'),
+                            contents=[
+                                TextComponent(
+                                    text='✏️ 管理提醒對象',
+                                    color='#20538F',  # 藍色文字
+                                    align='center',
+                                    weight='bold',
+                                    size='lg')
+                                ]
+                            ),                       
+                        BoxComponent(
+                            layout='vertical',
+                            padding_all='lg',
+                            background_color='#FCD5CE',  # 紅色背景
+                            corner_radius='md',
                             action=MessageAction(label='🗑️ 刪除提醒對象', text='刪除提醒對象'),
-                            style='secondary', color='#EF4444', height='md', margin='sm'
-                        ),
-                        ButtonComponent(action=MessageAction(label='🔙 回到主選單', text='選單'), style='link', margin='lg')
+                            contents=[
+                                TextComponent(
+                                    text='🗑️ 刪除提醒對象',
+                                    color='#BA181B',  # 紅色文字
+                                    align='center',
+                                    weight='bold',
+                                    size='lg')
+                                ]
+                            ),
                     ]
                 )
             ]
@@ -64,9 +266,7 @@ def create_patient_selection_message(members: list, action_prefix: str):
             )
         ))
     
-    # 【核心修正】從 linebot.models 導入 MessageAction
-    if len(members) < 13:
-        items.append(QuickReplyButton(action=MessageAction(label="管理成員", text="管理成員")))
+    # 移除管理成員按鈕
     
     prompt_text = "請問這份新藥單是給誰的？" if action_prefix == 'scan' else "請問您想查詢誰的藥歷？"
     return TextSendMessage(text=prompt_text, quick_reply=QuickReply(items=items))
@@ -126,6 +326,22 @@ def generate_analysis_report_messages(analysis_result: dict, frequency_map: dict
     if not structured_drugs: 
         return [TextSendMessage(text="分析結果中不包含藥物資訊。")]
 
+    # 【新增】為每個藥品補充圖片資訊和食物藥物交互作用（如果有 matched_drug_id）
+    from app.utils.db import DB
+    for drug in structured_drugs:
+        matched_id = drug.get('matched_drug_id')
+        if matched_id:
+            # 查詢資料庫獲取完整藥品資訊
+            drug_info = DB.get_pills_details_by_ids([matched_id])
+            if drug_info and len(drug_info) > 0:
+                drug_detail = drug_info[0]
+                # 補充圖片 URL
+                if not drug.get('image_url'):
+                    drug['image_url'] = drug_detail.get('image_url')
+                # 補充食物藥物交互作用
+                if not drug.get('interactions') and not drug.get('food_drug_interactions'):
+                    drug['interactions'] = drug_detail.get('interactions')
+
     display_date = analysis_result.get('visit_date', "日期未知")
     columns = []
 
@@ -135,6 +351,8 @@ def generate_analysis_report_messages(analysis_result: dict, frequency_map: dict
         drug_name = drug.get("drug_name_zh") or drug.get("drug_name_en") or "(未命名藥物)"
         main_use = drug.get("main_use") or "請參考藥袋說明"
         side_effects = drug.get("side_effects") or "請參考藥袋說明"
+        # 新增食物藥物交互作用
+        interactions = drug.get("interactions") or drug.get("food_drug_interactions") or "暫無資料"
         dosage = drug.get('dose_quantity', "劑量未知").strip()
         
         count_code = drug.get('frequency_count_code')
@@ -142,29 +360,60 @@ def generate_analysis_report_messages(analysis_result: dict, frequency_map: dict
         raw_frequency_text = drug.get('frequency_text')
         frequency = count_text if count_text else (raw_frequency_text or "用法未知")
 
-        bubble = BubbleContainer(
-            header=BoxComponent(
-                layout="vertical", contents=[
-                    TextComponent(text="看診日期", color="#ffffff", size="sm"),
-                    TextComponent(text=str(display_date), color="#ffffff", size="lg", weight="bold")
-                ], backgroundColor="#007BFF", paddingTop="15px", paddingBottom="15px"
-            ),
-            body=BoxComponent(
-                layout="vertical", spacing="md", contents=[
-                    TextComponent(text=str(drug_name), weight="bold", size="xl", wrap=True),
-                    SeparatorComponent(margin="lg"),
-                    BoxComponent(
-                        layout="vertical", margin="lg", spacing="sm", contents=[
-                            _create_info_row("單次劑量", str(dosage)),
-                            _create_info_row("用藥頻率", str(frequency)),
-                            SeparatorComponent(margin="md"),
-                            _create_info_row("主要用途", str(main_use)),
-                            _create_info_row("常見副作用", str(side_effects))
-                        ]
-                    )
+        # 【新增】條件性添加藥品圖片背景
+        bubble_components = {}
+        
+        # 檢查是否有藥品圖片，如果有則添加 hero 區塊
+        image_url = drug.get('image_url')
+        if image_url and image_url.strip():
+            bubble_components['hero'] = ImageComponent(
+                url=image_url,
+                size="full",
+                aspect_ratio="20:13",
+                aspect_mode="cover"
+            )
+        
+        # 保持原有的 header 和 body 結構
+        bubble_components['header'] = BoxComponent(
+            layout="vertical", contents=[
+                TextComponent(text="看診日期", color="#000000", size="sm"),
+                TextComponent(text=str(display_date), color="#000000", size="lg", weight="bold")
+            ], backgroundColor="#007BFF", paddingTop="15px", paddingBottom="15px"
+        )
+        
+        # 準備body內容，可能包含建立者資訊
+        body_contents = [
+            TextComponent(text=str(drug_name), weight="bold", size="xl", wrap=True),
+            SeparatorComponent(margin="lg"),
+            BoxComponent(
+                layout="vertical", margin="lg", spacing="sm", contents=[
+                    _create_info_row("單次劑量", str(dosage)),
+                    _create_info_row("用藥頻率", str(frequency)),
+                    SeparatorComponent(margin="md"),
+                    _create_info_row("主要用途", str(main_use)),
+                    _create_info_row("常見副作用", str(side_effects)),
+                    SeparatorComponent(margin="md"),
+                    # 食物藥物交互作用使用垂直佈局，避免文字被截斷
+                    TextComponent(text="食物藥物交互作用", color="#aaaaaa", size="sm"),
+                    TextComponent(text=str(interactions), wrap=True, color="#666666", size="sm", margin="xs")
                 ]
             )
+        ]
+        
+        # 如果有建立者資訊，添加到底部
+        creator_name = analysis_result.get('creator_name')
+        if creator_name:
+            created_date = analysis_result.get('created_at')
+            if created_date:
+                created_str = created_date.strftime('%Y-%m-%d') if hasattr(created_date, 'strftime') else str(created_date)[:10]
+                body_contents.append(SeparatorComponent(margin="md"))
+                body_contents.append(TextComponent(text=f"📝 由 {creator_name} 建立", size="xs", color="#999999", margin="sm"))
+        
+        bubble_components['body'] = BoxComponent(
+            layout="vertical", spacing="md", contents=body_contents
         )
+        
+        bubble = BubbleContainer(**bubble_components)
         columns.append(bubble)
         
     if not columns: return [TextSendMessage(text="無法產生用藥提醒卡片。")]
@@ -285,6 +534,14 @@ def create_records_carousel(member_name: str, records: list):
         ]
         if record.get('doctor_name'):
             body_contents.append(TextComponent(text=f"醫師: {record.get('doctor_name')}", size="sm", color="#888888"))
+        
+        # 添加建立者資訊
+        creator_name = record.get('creator_name')
+        if creator_name:
+            created_date = record.get('created_at')
+            if created_date:
+                created_str = created_date.strftime('%Y-%m-%d') if hasattr(created_date, 'strftime') else str(created_date)[:10]
+                body_contents.append(TextComponent(text=f"📝 由 {creator_name} 於 {created_str} 建立", size="xs", color="#999999"))
         
         card = BubbleContainer(
             body=BoxComponent(layout="vertical", spacing="md", contents=body_contents),

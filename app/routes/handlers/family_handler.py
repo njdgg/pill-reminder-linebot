@@ -74,6 +74,10 @@ def handle_postback(event, user_id):
         family_list = family_service.FamilyService.get_family_list(user_id)
         _reply_message(reply_token, flex_family.create_family_manager_carousel(family_list))
 
+    elif action == 'query_family':
+        family_list = family_service.FamilyService.get_family_list(user_id)
+        _reply_message(reply_token, flex_family.create_family_manager_carousel(family_list))
+
     elif action == 'cancel_bind':
         UserService.delete_user_simple_state(user_id)
         _reply_message(reply_token, TextSendMessage(text="操作已取消。"))

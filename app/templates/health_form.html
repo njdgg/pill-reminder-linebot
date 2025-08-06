@@ -856,8 +856,26 @@
         // --- 資料處理 ---
         async function loadAllHealthData(recorderId) {
             try {
-                // 添加時間戳以防止快取問題
-                const response = await fetch(`/api/health_logs/${recorderId}?t=${new Date().getTime()}`);
+                // 根據查看對象決定API端點
+                const targetPerson = getSelectedPerson();
+                let apiUrl;
+                
+                if (targetPerson === '本人') {
+                    // 查看本人時使用原API
+                    apiUrl = `/api/health_logs/${recorderId}?t=${new Date().getTime()}`;
+                } else {
+                    // 查看其他人時，直接使用target_person作為member_id
+                    // 因為在健康記錄中，target_person就是member的標識
+                    const memberId = targetPerson; // 例如 "10"
+                    
+                    console.log(`[DEBUG] 查看成員: ${targetPerson}, member_id: ${memberId}`);
+                    
+                    // 先嘗試新API，如果失敗則回退到舊API
+                    apiUrl = `/api/health_logs/${recorderId}/member/${memberId}?t=${new Date().getTime()}`;
+                }
+                
+                console.log(`[DEBUG] 載入健康資料，API: ${apiUrl}`);
+                const response = await fetch(apiUrl);
 
                 if (!response.ok) {
                     let errorMsg = `伺服器錯誤 (${response.status})`
@@ -936,8 +954,19 @@
             const targetPerson = getSelectedPerson();
 
             measurementTypes.forEach(type => {
-                // 注意：這裡我們直接使用全域變數 allLogs，它已經在 loadAllHealthData 中被更新了。
-                const personLogs = allLogs.filter(log => log.recorder_id === userProfile.userId && log.target_person === targetPerson);
+                // 修正：根據API端點決定過濾邏輯
+                const personLogs = allLogs.filter(log => {
+                    if (targetPerson === '本人') {
+                        // 查看本人時，顯示所有後端返回的記錄（後端已經過濾了權限）
+                        return true;
+                    } else {
+                        // 查看其他人時，如果使用了新API，顯示所有返回的記錄
+                        // 因為新API已經正確過濾了該成員的所有相關記錄
+                        return true;
+                    }
+                });
+                
+                console.log(`[DEBUG] 過濾前記錄數: ${allLogs.length}, 過濾後記錄數: ${personLogs.length}`);
 
                 let latestLog, displayValue;
                 if (type.key === 'blood_pressure') {
@@ -974,7 +1003,19 @@
             const targetPerson = getSelectedPerson();
             document.getElementById('historyTitle').innerHTML = `<span class="animated-emoji">📈</span> ${targetPerson}的${type.name}歷史紀錄 <span class="pulse-emoji">📊</span>`;
 
-            const personLogs = allLogs.filter(log => log.recorder_id === userProfile.userId && log.target_person === targetPerson);
+            // 修正：根據API端點決定過濾邏輯
+            const personLogs = allLogs.filter(log => {
+                if (targetPerson === '本人') {
+                    // 查看本人時，顯示所有後端返回的記錄（後端已經過濾了權限）
+                    return true;
+                } else {
+                    // 查看其他人時，如果使用了新API，顯示所有返回的記錄
+                    // 因為新API已經正確過濾了該成員的所有相關記錄
+                    return true;
+                }
+            });
+            
+            console.log(`[DEBUG] 歷史記錄過濾前: ${allLogs.length}, 過濾後: ${personLogs.length}`);
 
             renderHistoryChart(personLogs, type);
             renderHistoryTable(personLogs, type);
@@ -1439,14 +1480,17 @@
             select.appendChild(otherOption);
 
             // 選擇器變更事件
-            select.addEventListener('change', (event) => {
+            select.addEventListener('change', async (event) => {
                 const isOther = event.target.value === 'other';
                 customInput.classList.toggle('hidden', !isOther);
                 if (isOther) {
                     customInput.focus();
                     customInput.value = ''; // 清空輸入框
                 }
-                updateDashboard();
+                
+                // 重新載入健康資料（因為查看對象改變了）
+                await loadAllHealthData(userProfile.userId);
+                
                 // 如果歷史紀錄檢視是活動的，也更新它
                 if (!historyView.classList.contains('hidden') && currentViewingType) {
                     showHistory(currentViewingType);
