@@ -1,5 +1,5 @@
 # 使用輕量級的 Python 映像檔
-FROM python:3.11-slim
+FROM python:3.13.7-slim
 
 # 設定環境變數，避免產生 .pyc 檔案
 ENV PYTHONDONTWRITEBYTECODE 1
